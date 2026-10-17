@@ -210,14 +210,22 @@ function buildScenery(rand, res, pond) {
 function updatePads(dt, time, pads, pond) {
   for (const pad of pads) {
     if (pad.held) continue;
+    // Pads only sip the push. At full strength a drag through open water
+    // shoved every pad near the cursor away from it, which reads as a pad
+    // moving opposite to your hand.
     const push = waterPushAt(pad.x, pad.y, dt);
-    pad.driftX += push.x;
-    pad.driftY += push.y;
+    pad.driftX += push.x * 0.3;
+    pad.driftY += push.y * 0.3;
     // pull back toward home so the pond keeps its composition
     pad.driftX += (pad.homeX - pad.x - pad.driftX) * dt * 0.35;
     pad.driftY += (pad.homeY - pad.y - pad.driftY) * dt * 0.35;
     pad.driftX *= Math.exp(-dt * 0.8);
     pad.driftY *= Math.exp(-dt * 0.8);
+    const drift = Math.hypot(pad.driftX, pad.driftY);
+    if (drift > 4) {
+      pad.driftX *= 4 / drift;
+      pad.driftY *= 4 / drift;
+    }
     const nx = pad.x + pad.driftX * dt * 6;
     const ny = pad.y + pad.driftY * dt * 6;
     if (pond.d(nx, ny) < 0.86) {

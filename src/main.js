@@ -442,7 +442,7 @@ function findPadAt(x, y) {
   let bestD = 1e9;
   for (const pad of pads) {
     const d = Math.hypot(pad.x - x, pad.y - y);
-    if (d < pad.r && d < bestD) {
+    if (d < pad.r + 2 && d < bestD) {
       best = pad;
       bestD = d;
     }
@@ -831,6 +831,11 @@ function installInput(canvas) {
     probeDragEnd();
     handlePointerUp();
   });
+
+  // a native drag or a text selection cancels the pointer halfway through a
+  // pad drag, which drops the pad and leaves you stirring water instead
+  $(canvas).on("dragstart", (ev) => ev.preventDefault());
+  $(canvas).on("selectstart", (ev) => ev.preventDefault());
 
   $(document).on("keydown", (ev) => {
     if (handleKey(ev.key)) ev.preventDefault();
