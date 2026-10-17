@@ -153,8 +153,9 @@ function boot() {
   world.koi = Pond.school.koi;
   world.minnows = Pond.school.minnows;
   world.count = st.koiCount;
-  for (const k of world.koi) {
-    k.mesh = gfx.createFishMesh(k.extents, SPINE_NODES, k.spineRow, k.height, k.length);
+  for (const k of world.koi) k.spineTex = gfx.makeSpineTex();
+  for (const school of world.minnows) {
+    for (const m of school.fish) m.spineTex = gfx.makeSpineTex();
   }
   Pond.butterflies = createButterflies(new Rand(st.seed ^ 0x5bf03635), world.res);
 
@@ -224,8 +225,8 @@ function boot() {
         kind: r.kind, x: +r.x.toFixed(1), y: +r.y.toFixed(1),
         radius: +r.radius.toFixed(1), amp: +r.amp.toFixed(3),
       })),
-    spawnAt: (x, y, kind) => {
-      spawnRipple(kind || "touch", x, y, {});
+    spawnAt: (x, y, kind, scale, sign) => {
+      spawnRipple(kind || "touch", x, y, { scale: scale === undefined ? 1 : scale, sign });
       return WATER_FIELD.rings.length;
     },
     feedAt: (x, y) => feed(x, y),
@@ -618,7 +619,6 @@ function reseed() {
       rand: fresh.rand, cruise: fresh.cruise, maxSpeed: fresh.maxSpeed,
       turnRate: fresh.turnRate,
     });
-    k.mesh = Pond.gfx.createFishMesh(k.extents, SPINE_NODES, k.spineRow, k.height, k.length);
     k.x = world.pond.cx + rand.range(-40, 40);
     k.y = world.pond.cy + rand.range(-40, 40);
   }
@@ -655,6 +655,7 @@ function simulate(dt) {
   for (const school of world.minnows) school.update(dt, simWorld);
   updatePads(dt, time, Pond.scenery.pads, world.pond);
   updateDuckweed(dt, time, Pond.scenery.duckweed, world.pond);
+  updateDuckweed(dt, time, Pond.scenery.surfaceMoss, world.pond, 0.5);
   updateClouds(dt, world.res, Pond.scenery.clouds);
   updateButterflies(dt, time, Pond.butterflies, { pond: world.pond, res: world.res, flowers: Pond.scenery.padFlowers });
 
@@ -699,50 +700,75 @@ function drawFrame() {
   // shadows first, they live on the floor
   const blob = Pond.blobCanvas();
   const koiSorted = world.koi.slice(0, world.count).sort((a, c) => c.depth - a.depth);
+  // each koi casts its own silhouette on the floor
   for (const k of koiSorted) {
-    gfx.drawSprite(blob, k.x + 1.6 + k.depth * 2, k.y + 2.6 + k.depth * 3.5, k.length * 1.0, k.length * 0.45, k.heading,
-      [0.05, 0.12, 0.15, CONFIG.shadows.koiAlpha[0] + k.depth * (CONFIG.shadows.koiAlpha[1] - CONFIG.shadows.koiAlpha[0])], false);
+    const a = k.aabb;
+    const off = 1.8 + k.depth * 3.4;
+    const alpha = CONFIG.shadows.koiAlpha[0] + k.depth * (CONFIG.shadows.koiAlpha[1] - CONFIG.shadows.koiAlpha[0]);
+    gfx.drawFish({
+      canvas: k.canvas, extents: k.extents, spineTex: k.spineTex,
+      spineData: k.spineData, spineN: SPINE_NODES,
+      spriteW: k.length, spriteH: k.height, vc: k.spineRow / k.height,
+      scale: 1,
+      x: (a.minX + a.maxX) / 2 + off * 0.7, y: (a.minY + a.maxY) / 2 + off,
+      w: (a.maxX - a.minX) + 12, h: (a.maxY - a.minY) + 12,
+      offset: [-off * 0.7, -off],
+      tint: [0.05, 0.12, 0.15, alpha * 2.2],
+      deepTint: 0,
+    });
   }
+  // pads cast their own shape on the floor
   for (const pad of scenery.pads) {
     const bob = waterBobAt(pad.x, pad.y, time) * 0.6;
-    gfx.drawSprite(blob, pad.x + 2, pad.y + 3 + bob * 0.4, pad.size * 0.98, pad.size * 0.86, pad.rot, [0.07, 0.15, 0.13, CONFIG.shadows.padAlpha], false);
+    gfx.drawSprite(pad.tex, pad.x + 2.2, pad.y + 3.2 + bob * 0.4, pad.size * 0.99, pad.size * 0.96, pad.rot, [0.09, 0.17, 0.15, CONFIG.shadows.padAlpha], false);
   }
   for (const we of scenery.duckweed) {
     const bob = waterBobAt(we.x, we.y, time) * 0.5;
     gfx.drawSprite(blob, we.x + 1, we.y + 1.5 + bob * 0.4, 3, 2.4, 0, [0.08, 0.16, 0.14, 0.14], false);
   }
+  for (const mo of scenery.surfaceMoss) {
+    const bob = waterBobAt(mo.x, mo.y, time) * 0.5;
+    gfx.drawSprite(blob, mo.x + 1.2, mo.y + 1.6 + bob * 0.4, mo.size * 0.9, mo.size * 0.62, mo.rot, [0.08, 0.16, 0.14, 0.2], false);
+  }
 
   // koi, deepest first so the shallow ones pass over the top
   for (const k of koiSorted) {
     const gulpPulse = k.gulpAnim > 0 ? 1 + Math.sin((0.4 - k.gulpAnim) / 0.4 * Math.PI) * 0.06 : 1;
-    gfx.drawFish(k.mesh, k.canvas, k.spine, {
-      texH: k.height,
+    const a = k.aabb;
+    gfx.drawFish({
+      canvas: k.canvas, extents: k.extents, spineTex: k.spineTex,
+      spineData: k.spineData, spineN: SPINE_NODES,
+      spriteW: k.length, spriteH: k.height, vc: k.spineRow / k.height,
       scale: k.depthScale() * gulpPulse,
-      wavePhase: k.wavePhase || 0,
-      waveAmp: k.length * (0.018 + (k.speed / k.maxSpeed) * 0.05) * k.waveAmpBase,
-      waveK: 5.4,
-      tint: [1, 1, 1, 1 - k.depth * 0.16],
-      deepTint: k.depth * 0.45,
+      x: (a.minX + a.maxX) / 2, y: (a.minY + a.maxY) / 2,
+      w: (a.maxX - a.minX) + 8, h: (a.maxY - a.minY) + 8,
+      tint: [1, 1, 1, 1 - k.depth * 0.1],
+      deepTint: k.depth * 0.32,
     });
   }
 
   // minnows ride just under the surface
   for (const school of world.minnows) {
     for (const m of school.fish) {
-      gfx.drawFish(MeshCache.get(m.canvas, () => gfx.createFishMesh(
-        m.extents, MINNOW_NODES, m.sprite.spineRow, m.canvas.height, m.canvas.width,
-      )), m.canvas, m.spine, {
-        texH: m.canvas.height,
+      const a = m.aabb;
+      gfx.drawFish({
+        canvas: m.canvas, extents: m.extents, spineTex: m.spineTex,
+        spineData: m.spineData, spineN: MINNOW_NODES,
+        spriteW: m.canvas.width, spriteH: m.canvas.height,
+        vc: m.sprite.spineRow / m.canvas.height,
         scale: 1,
-        wavePhase: m.phase,
-        waveAmp: 0.7,
-        waveK: 4.2,
-        tint: [1, 1, 1, 0.95],
+        x: (a.minX + a.maxX) / 2, y: (a.minY + a.maxY) / 2,
+        w: (a.maxX - a.minX) + 6, h: (a.maxY - a.minY) + 6,
+        tint: [1, 1, 1, 0.96],
         deepTint: 0.18,
       });
     }
   }
 
+  // weed beds on the floor, drawn under the surface so they tint and bend
+  for (const w of scenery.weeds) {
+    gfx.drawSprite(w.tex, w.x, w.y, w.w, w.h, w.rot, [0.74, 0.88, 0.84, 0.92], false);
+  }
   // mossy stones standing in the shallows (under the surface, so the water
   // pass bends and tints them with everything else)
   for (const s of scenery.shore) {
@@ -751,6 +777,11 @@ function drawFrame() {
   }
 
   // butterfly shadows and their faint reflection on the surface
+  // moss mats sit on the surface, a hair proud of the water
+  for (const mo of scenery.surfaceMoss) {
+    const bob = waterBobAt(mo.x, mo.y, time) * 0.5;
+    gfx.drawSprite(mo.tex, mo.x, mo.y + bob, mo.size, mo.size * 0.8, mo.rot, [0.98, 1.04, 0.96, 1], false);
+  }
   for (const bf of Pond.butterflies) {
     gfx.drawSprite(blob, bf.x + 1.5, bf.y + 2.4, 6, 4, 0, [0.08, 0.15, 0.13, CONFIG.shadows.butterflyAlpha], false);
     if (world.pond.d(bf.x, bf.y) < 0.94 && !bf.resting) {
@@ -783,6 +814,11 @@ function drawFrame() {
     const size = 3.4 * we.size;
     gfx.drawSprite(we.tex, we.x, we.y + bob, size, size * 0.8, we.rot, [1, 1, 1, 1], false);
   }
+  // moss mats sit on the surface, a hair proud of the water
+  for (const mo of scenery.surfaceMoss) {
+    const bob = waterBobAt(mo.x, mo.y, time) * 0.5;
+    gfx.drawSprite(mo.tex, mo.x, mo.y + bob, mo.size, mo.size * 0.8, mo.rot, [0.98, 1.04, 0.96, 1], false);
+  }
   for (const bf of Pond.butterflies) {
     gfx.drawSprite(bf.canvas, bf.x, bf.y, bf.canvas.width, bf.canvas.height, bf.rot, [1, 1, 1, 1], false);
   }
@@ -794,14 +830,6 @@ function drawFrame() {
 
   gfx.present(world);
 }
-
-const MeshCache = {
-  map: new Map(),
-  get(canvas, make) {
-    if (!this.map.has(canvas)) this.map.set(canvas, make());
-    return this.map.get(canvas);
-  },
-};
 
 let __blob = null;
 Pond.blobCanvas = function () {

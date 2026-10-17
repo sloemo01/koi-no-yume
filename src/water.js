@@ -45,7 +45,7 @@ function spawnRipple(kind, x, y, opts) {
       delay: i * profile.stagger,
       startRadius: profile.startRadius * scale,
       expand: profile.expandSpeed * scale * profile.lifetime,
-      strength: profile.initialStrength * scale,
+      strength: profile.initialStrength * scale * ((opts && opts.sign) || 1),
       sharpness: profile.sharpness,
       profile,
       alive: true,

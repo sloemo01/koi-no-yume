@@ -73,6 +73,10 @@ class Koi {
 
     this.spine = [];
     for (let i = 0; i < SPINE_NODES; i++) this.spine.push({ x: 0, y: 0 });
+    // what the renderer samples: x, y, arclength for every spine node
+    this.spineData = new Float32Array(SPINE_NODES * 4);
+    this.aabb = { minX: 0, minY: 0, maxX: 0, maxY: 0 };
+    this.spineTex = null;
     this.place(rand, pond);
   }
 
@@ -384,6 +388,51 @@ class Koi {
       node.x = lerp(node.x, tx, stiffness);
       node.y = lerp(node.y, ty, stiffness);
     }
+    this.buildRenderSpine();
+  }
+
+  // the body path plus the travelling wave, as data the shader samples:
+  // x, y and the arclength so a pixel knows where it sits on the fish
+  buildRenderSpine() {
+    const n = SPINE_NODES;
+    const data = this.spineData;
+    const phase = this.wavePhase || 0;
+    const amp = this.length * (0.014 + (this.speed / this.maxSpeed) * 0.042) * this.waveAmpBase;
+    let acc = 0;
+    let minX = 1e9;
+    let minY = 1e9;
+    let maxX = -1e9;
+    let maxY = -1e9;
+    for (let i = 0; i < n; i++) {
+      const a = this.spine[Math.max(0, i - 1)];
+      const b = this.spine[Math.min(n - 1, i + 1)];
+      const tx = b.x - a.x;
+      const ty = b.y - a.y;
+      const tl = Math.hypot(tx, ty) || 1;
+      const nx = -ty / tl;
+      const ny = tx / tl;
+      const t = i / (n - 1);
+      const off = Math.sin(phase - i * 0.9) * amp * Math.pow(t, 1.4);
+      if (i > 0) {
+        acc += Math.hypot(this.spine[i].x - this.spine[i - 1].x, this.spine[i].y - this.spine[i - 1].y);
+      }
+      const x = this.spine[i].x + nx * off;
+      const y = this.spine[i].y + ny * off;
+      data[i * 4] = x;
+      data[i * 4 + 1] = y;
+      data[i * 4 + 2] = acc;
+      data[i * 4 + 3] = 0;
+      if (x < minX) minX = x;
+      if (y < minY) minY = y;
+      if (x > maxX) maxX = x;
+      if (y > maxY) maxY = y;
+    }
+    const total = Math.max(acc, 1e-3);
+    for (let i = 0; i < n; i++) data[i * 4 + 2] /= total;
+    this.aabb.minX = minX;
+    this.aabb.minY = minY;
+    this.aabb.maxX = maxX;
+    this.aabb.maxY = maxY;
   }
 
   scatter(rand, pond) {
@@ -436,6 +485,9 @@ class MinnowSchool {
         jitter: rand.range(0, 60),
         phase: rand.angle(),
         spine: [],
+        spineData: new Float32Array(MINNOW_NODES * 4),
+        aabb: { minX: 0, minY: 0, maxX: 0, maxY: 0 },
+        spineTex: null,
       });
     }
     for (const m of this.fish) {
@@ -541,16 +593,10 @@ class MinnowSchool {
       m.y += Math.sin(m.heading) * m.speed * dt;
       m.phase += dt * (7 + m.speed * 0.12);
 
-      for (let i = 0; i < MINNOW_NODES; i++) {
-        const t = i / (MINNOW_NODES - 1);
-        const node = m.spine[i];
-        node.x = m.x - Math.cos(m.heading) * (CONFIG.minnows.length / (MINNOW_NODES - 1)) * i;
-        node.y = m.y - Math.sin(m.heading) * (CONFIG.minnows.length / (MINNOW_NODES - 1)) * i;
-        void t;
-      }
+      this.buildMemberSpine(m);
     }
 
-    // a wake while the school bolts
+  // a wake while the school bolts
     if (this.state === "dart") {
       this.wakeClock -= dt;
       if (this.wakeClock <= 0) {
@@ -561,6 +607,33 @@ class MinnowSchool {
     void pellets;
   }
 }
+
+
+MinnowSchool.prototype.buildMemberSpine = function (m) {
+    const n = MINNOW_NODES;
+    const step = CONFIG.minnows.length / (n - 1);
+    const dirX = Math.cos(m.heading);
+    const dirY = Math.sin(m.heading);
+    const perpX = -dirY;
+    const perpY = dirX;
+    const amp = 0.55 + m.speed * 0.012;
+    for (let i = 0; i < n; i++) {
+      const t = i / (n - 1);
+      const lat = Math.sin(m.phase - t * 4.6) * amp * Math.pow(t, 1.4);
+      const x = m.x - dirX * step * i + perpX * lat;
+      const y = m.y - dirY * step * i + perpY * lat;
+      m.spine[i].x = x;
+      m.spine[i].y = y;
+      m.spineData[i * 4] = x;
+      m.spineData[i * 4 + 1] = y;
+      m.spineData[i * 4 + 2] = i / (n - 1);
+      m.spineData[i * 4 + 3] = 0;
+    }
+    m.aabb.minX = Math.min(m.spine[0].x, m.spine[n - 1].x) - 3;
+    m.aabb.maxX = Math.max(m.spine[0].x, m.spine[n - 1].x) + 3;
+    m.aabb.minY = Math.min(m.spine[0].y, m.spine[n - 1].y) - 5;
+    m.aabb.maxY = Math.max(m.spine[0].y, m.spine[n - 1].y) + 5;
+};
 
 function createSchool(rand, pond, res) {
   const tally = {};

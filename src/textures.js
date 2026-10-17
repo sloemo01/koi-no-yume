@@ -806,6 +806,80 @@ const TEXTURES = (() => {
     return c;
   }
 
+  // a clump of tall underwater weed, seen through the water from above
+  function paintPondWeed(rand) {
+    const W = 14;
+    const H = 26;
+    const { c, ctx } = makeCanvas(W, H);
+    const g0 = hexToRgb("#3f6b3a");
+    const g1 = hexToRgb("#54803f");
+    const strands = rand.int(4, 7);
+    for (let i = 0; i < strands; i++) {
+      const x0 = rand.range(2, W - 3);
+      const h = rand.range(H * 0.5, H * 0.95);
+      const bend = rand.range(-2.2, 2.2);
+      const col = rgbToHex(mixRgb(g0, g1, rand.unit()));
+      const w = rand.chance(0.35) ? 2 : 1;
+      for (let k = 0; k < h; k++) {
+        const t = k / h;
+        const xx = Math.round(x0 + bend * t * t);
+        const yy = Math.round(H - 1 - k);
+        for (let ww = 0; ww < w; ww++) px(ctx, xx + ww, yy, col);
+      }
+      if (rand.chance(0.5)) {
+        const t = rand.range(0.3, 0.7);
+        const xx = Math.round(x0 + bend * t * t);
+        const yy = Math.round(H - 1 - h * t);
+        px(ctx, xx - 1, yy, rgbToHex(mixRgb(hexToRgb(col), [235, 245, 235], 0.18)));
+        px(ctx, xx + 1, yy, rgbToHex(mixRgb(hexToRgb(col), [235, 245, 235], 0.18)));
+      }
+    }
+    harden(c);
+    return c;
+  }
+
+  // a flat mat of moss lying on the water: rounded outline, a wet dark
+  // underside rim, a few holes where water shows through, bright sprigs on top
+  function paintFloatingMoss(rand) {
+    const W = 13;
+    const H = 10;
+    const { c, ctx } = makeCanvas(W, H);
+    const dark = hexToRgb("#2f4d24");
+    const mid = hexToRgb("#3f6b2c");
+    const light = hexToRgb("#548b38");
+    const bright = hexToRgb("#6fa446");
+    const rx = W * 0.44;
+    const ry = H * 0.4;
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        const qx = (x - (W - 1) / 2) / rx;
+        const qy = (y - (H - 1) / 2) / ry;
+        const wob = 0.82 + valueNoise2(x * 0.9 + 11.3, y * 0.9 + 4.7) * 0.42;
+        const dist = Math.hypot(qx, qy);
+        if (dist > wob) continue;
+        let col = mid;
+        if (dist > wob * 0.78) col = dark;
+        else if (dist < wob * 0.45) col = light;
+        px(ctx, x, y, rgbToHex(col));
+      }
+    }
+    // bright sprigs and a couple of holes
+    const sprigs = rand.int(2, 5);
+    for (let i = 0; i < sprigs; i++) {
+      const x = rand.int(3, W - 4);
+      const y = rand.int(2, H - 3);
+      px(ctx, x, y, rgbToHex(bright));
+      if (rand.chance(0.6)) px(ctx, x + 1, y - 1, rgbToHex(mixRgb(bright, light, 0.4)));
+    }
+    for (let i = 0, n = rand.int(1, 3); i < n; i++) {
+      const x = rand.int(3, W - 4);
+      const y = rand.int(2, H - 3);
+      px(ctx, x, y, rgbToHex(mixRgb(mid, [70, 110, 96], 0.55)));
+    }
+    harden(c);
+    return c;
+  }
+
   function paintDuckweed(rand) {
     const W = 5;
     const H = 4;
@@ -846,7 +920,7 @@ const TEXTURES = (() => {
     makeCanvas, harden, outline, measureExtents, extentsAt,
     paintKoi, paintMinnow, paintButterfly, paintButterflyRest,
     paintLilyPad, paintLotusFlower, paintMossClump, paintStone,
-    paintGrassTuft, paintReedClump, paintShoreFlower, paintDuckweed, paintBlob,
+    paintGrassTuft, paintReedClump, paintShoreFlower, paintDuckweed, paintBlob, paintPondWeed, paintFloatingMoss,
     KOI_DESIGNS, MINNOW_VARIANTS,
   };
 })();

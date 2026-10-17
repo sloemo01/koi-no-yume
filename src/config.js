@@ -58,15 +58,17 @@ const CONFIG = {
   },
 
   pads: {
-    clusters: [3, 5],
-    perCluster: [2, 4],
-    size: [16, 32],
-    flowerChance: 0.42,
+    clusters: [3, 4],
+    perCluster: [2, 3],
+    size: [24, 48],
+    flowerChance: 0.5,
     dragLag: 0.34, // 0..1, lower = heavier pad
   },
+  weeds: { clumps: 9 },
+  surfaceMoss: { clumps: 20, size: [8, 16] },
 
-  moss: { clumps: 16 },
-  stones: { count: 7 },
+  moss: { clumps: 34 },
+  stones: { count: 12 },
   reeds: { clusters: 5 },
   tufts: { count: 26 },
   shoreFlowers: { clusters: 6 },

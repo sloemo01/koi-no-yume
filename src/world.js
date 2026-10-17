@@ -48,7 +48,7 @@ function buildScenery(rand, res, pond) {
         padFlowers.push({
           x: x + rand.range(-2.5, 2.5),
           y: y + rand.range(-2.5, 2.5),
-          size: rand.int(12, 16),
+          size: rand.int(18, 24),
           rot: rand.range(-0.5, 0.5),
           pad,
           tex: TEXTURES.paintLotusFlower(rand, colorway, 15),
@@ -84,12 +84,35 @@ function buildScenery(rand, res, pond) {
     });
   }
   for (let i = 0; i < CONFIG.stones.count; i++) {
-    const p = pond.edgePoint(rand, rand.range(-8, 12));
+    // a few rocks sit out in the open water, the rest line the shallows
+    const p = i < 4 ? pond.randomPoint(rand, 0.62, 0.3) : pond.edgePoint(rand, rand.range(-8, 12));
     const scale = rand.range(0.75, 1.4);
     shore.push({
       tex: rand.pick(stoneTexs),
       x: p.x, y: p.y, w: 16 * scale, h: 11 * scale,
       rot: rand.range(-0.3, 0.3), anchor: "center", submerged: true,
+    });
+    // moss grows on stones
+    if (rand.chance(0.55)) {
+      const m = rand.range(0.7, 1.15);
+      shore.push({
+        tex: rand.pick(mossTexs),
+        x: p.x + rand.range(-4, 4), y: p.y + rand.range(-3, 2), w: 13 * m, h: 9 * m,
+        rot: rand.range(-0.3, 0.3), anchor: "center", submerged: true,
+      });
+    }
+  }
+  // weed beds on the floor of the shallows
+  const pondWeedTexs = [];
+  for (let i = 0; i < 3; i++) pondWeedTexs.push(TEXTURES.paintPondWeed(rand));
+  const weeds = [];
+  for (let i = 0; i < CONFIG.weeds.clumps; i++) {
+    const p = pond.randomPoint(rand, 0.68, 0.26);
+    const scale = rand.range(0.85, 1.5);
+    weeds.push({
+      tex: rand.pick(pondWeedTexs),
+      x: p.x, y: p.y, w: 14 * scale, h: 26 * scale,
+      rot: rand.range(-0.4, 0.4),
     });
   }
   for (let i = 0; i < CONFIG.reeds.clusters; i++) {
@@ -155,7 +178,27 @@ function buildScenery(rand, res, pond) {
     });
   }
 
-  return { pads, padFlowers, shore, duckweed, clouds };
+  // ---- moss mats floating on the surface ----
+  const surfaceMossTexs = [];
+  for (let i = 0; i < 4; i++) surfaceMossTexs.push(TEXTURES.paintFloatingMoss(rand));
+  const surfaceMoss = [];
+  for (let c = 0; c < CONFIG.surfaceMoss.clumps; c++) {
+    const p = pond.randomPoint(rand, 0.72, 0.16);
+    const mats = rand.int(1, 3);
+    for (let i = 0; i < mats; i++) {
+      const size = rand.range(CONFIG.surfaceMoss.size[0], CONFIG.surfaceMoss.size[1]);
+      surfaceMoss.push({
+        tex: rand.pick(surfaceMossTexs),
+        x: clamp(p.x + rand.range(-9, 9), 6, res.x - 6),
+        y: clamp(p.y + rand.range(-7, 7), 6, res.y - 6),
+        size,
+        rot: rand.range(0, Math.PI * 2),
+        vx: 0,
+        vy: 0,
+      });
+    }
+  }
+  return { pads, padFlowers, shore, duckweed, weeds, surfaceMoss, clouds };
 }
 
 // pads ride the water: they bob, get pushed by rings, and slowly drift home
@@ -180,12 +223,13 @@ function updatePads(dt, time, pads, pond) {
   }
 }
 
-// duckweed just drifts and bobs
-function updateDuckweed(dt, time, weed, pond) {
+// floaters just drift and bob; rate lets the heavy moss mats move slower
+function updateDuckweed(dt, time, weed, pond, rate) {
   for (const w of weed) {
+    const k = rate === undefined ? 1 : rate;
     const push = waterPushAt(w.x, w.y, dt);
-    w.vx += push.x * 1.6;
-    w.vy += push.y * 1.6;
+    w.vx += push.x * 1.6 * k;
+    w.vy += push.y * 1.6 * k;
     w.vx *= Math.exp(-dt * 1.4);
     w.vy *= Math.exp(-dt * 1.4);
     const nx = w.x + w.vx * dt * 10;
@@ -194,7 +238,7 @@ function updateDuckweed(dt, time, weed, pond) {
       w.x = nx;
       w.y = ny;
     }
-    w.rot += dt * 0.1;
+    w.rot += dt * 0.1 * (rate === undefined ? 1 : rate);
   }
 }
 

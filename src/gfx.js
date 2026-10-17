@@ -59,6 +59,20 @@ vec3 shadeRgb3(vec3 c, float k) {
 
 // displacement of every live ring, in pixels. The same maths lives in
 // water.js so the CPU can bob floating things with it.
+// unsigned strength of the ripple crests at p: 0 away from every ring,
+// rising to the amplitude on a crest. This is what the light catches.
+float ringCrest(vec2 p, float offsetPx) {
+  float acc = 0.0;
+  for (int i = 0; i < ${MAX_RINGS}; i++) {
+    if (i >= uRingCount) break;
+    vec4 r = uRings[i];
+    float dist = max(length(p - r.xy), 0.0001);
+    float sd = dist - r.z - offsetPx;
+    acc += exp(-abs(sd) * uRingK[i]) * r.w;
+  }
+  return acc;
+}
+
 vec2 ringDisp(vec2 p) {
   vec2 acc = vec2(0.0);
   for (int i = 0; i < ${MAX_RINGS}; i++) {
@@ -75,12 +89,17 @@ vec2 ringDisp(vec2 p) {
 
 // the ambient swell: three slow crossing waves plus one finer ripple, and
 // their analytic slope. swellH must match swellAt() in water.js.
+float swellWarp(vec2 p) {
+  return (vnoise(p * 0.0125) - 0.5) * 6.2 + (vnoise(p * 0.043 + 11.0) - 0.5) * 1.8;
+}
+
 float swellH(vec2 p) {
+  float w = swellWarp(p);
   return (
-    sin((p.x * 0.031 + p.y * 0.021) + uTime * 0.5464) * 0.5 +
-    sin((p.y * 0.047 - p.x * 0.017) + uTime * 0.8607 + 1.7) * 0.32 +
-    sin((p.x * 0.083 + p.y * 0.060) + uTime * 1.2823 + 4.1) * 0.18 +
-    sin((p.x * 0.190 - p.y * 0.130) + uTime * 2.0268 + 0.9) * 0.30
+    sin((p.x * 0.031 + p.y * 0.021) + w * 0.8 + uTime * 0.5464) * 0.5 +
+    sin((p.y * 0.047 - p.x * 0.017) + w * 0.7 + uTime * 0.8607 + 1.7) * 0.32 +
+    sin((p.x * 0.083 + p.y * 0.060) + w * 0.5 + uTime * 1.2823 + 4.1) * 0.16 +
+    sin((p.x * 0.190 - p.y * 0.130) + w * 0.35 + uTime * 2.0268 + 0.9) * 0.14
   ) * uSwellAmp;
 }
 
@@ -112,6 +131,7 @@ function Gfx(canvas) {
   this.canvas = canvas;
   this.targets = {};
   this.textureCache = new Map();
+  this.extCache = new Map();
   this.pixelStorei = gl.pixelStorei.bind(gl);
   gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
   gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
@@ -143,7 +163,7 @@ function Gfx(canvas) {
     bed: this.makeProgram(BED_VS, BED_FS),
     water: this.makeProgram(FLAT_VS, WATER_FS),
     sprite: this.makeProgram(SPRITE_VS, SPRITE_FS),
-    fish: this.makeProgram(FISH_VS, FISH_FS),
+    fish: this.makeProgram(SPRITE_VS, FISH_FS),
     bright: this.makeProgram(FLAT_VS, BRIGHT_FS),
     blur: this.makeProgram(FLAT_VS, BLUR_FS),
     composite: this.makeProgram(FLAT_VS, COMPOSITE_FS),
@@ -256,69 +276,14 @@ Gfx.prototype.tex = function (canvasEl) {
 };
 
 Gfx.prototype.freeTexture = function (canvasEl) {
-  if (!this.textureCache.has(canvasEl)) return;
-  this.gl.deleteTexture(this.textureCache.get(canvasEl));
-  this.textureCache.delete(canvasEl);
-};
-
-// a bendable mesh for one fish sprite: two vertices per spine node, plus the
-// silhouette table, so fins and tails survive any bend
-Gfx.prototype.createFishMesh = function (extents, nodes, spineRow, texH, texW) {
-  const gl = this.gl;
-  const verts = new Float32Array(nodes * 2 * 5);
-  for (let i = 0; i < nodes; i++) {
-    const u = nodes > 1 ? i / (nodes - 1) : 0;
-    // widen to the tallest column in the neighbourhood so the outline never
-    // breaks between nodes
-    const col = Math.round(u * (texW - 1));
-    let top = 0;
-    let bot = 0;
-    for (let c = Math.max(0, col - 2); c <= Math.min(texW - 1, col + 2); c++) {
-      top = Math.max(top, extents[c * 2]);
-      bot = Math.max(bot, extents[c * 2 + 1]);
-    }
-    const vc = spineRow / texH;
-    for (let s = 0; s < 2; s++) {
-      const side = s === 0 ? -1 : 1;
-      const o = (i * 2 + s) * 5;
-      verts[o] = u;
-      verts[o + 1] = side;
-      verts[o + 2] = top;
-      verts[o + 3] = bot;
-      verts[o + 4] = vc;
-    }
+  if (this.textureCache.has(canvasEl)) {
+    this.gl.deleteTexture(this.textureCache.get(canvasEl));
+    this.textureCache.delete(canvasEl);
   }
-  const indices = new Uint16Array((nodes - 1) * 6);
-  for (let i = 0; i < nodes - 1; i++) {
-    const a = i * 2;
-    const o = i * 6;
-    indices[o] = a;
-    indices[o + 1] = a + 1;
-    indices[o + 2] = a + 2;
-    indices[o + 3] = a + 1;
-    indices[o + 4] = a + 3;
-    indices[o + 5] = a + 2;
+  if (this.extCache.has(canvasEl)) {
+    this.gl.deleteTexture(this.extCache.get(canvasEl));
+    this.extCache.delete(canvasEl);
   }
-  const vao = gl.createVertexArray();
-  gl.bindVertexArray(vao);
-  const vbo = gl.createBuffer();
-  gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
-  gl.bufferData(gl.ARRAY_BUFFER, verts, gl.STATIC_DRAW);
-  gl.enableVertexAttribArray(0);
-  gl.vertexAttribPointer(0, 1, gl.FLOAT, false, 20, 0);
-  gl.enableVertexAttribArray(1);
-  gl.vertexAttribPointer(1, 1, gl.FLOAT, false, 20, 4);
-  gl.enableVertexAttribArray(2);
-  gl.vertexAttribPointer(2, 1, gl.FLOAT, false, 20, 8);
-  gl.enableVertexAttribArray(3);
-  gl.vertexAttribPointer(3, 1, gl.FLOAT, false, 20, 12);
-  gl.enableVertexAttribArray(4);
-  gl.vertexAttribPointer(4, 1, gl.FLOAT, false, 20, 16);
-  const ibo = gl.createBuffer();
-  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo);
-  gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indices, gl.STATIC_DRAW);
-  gl.bindVertexArray(null);
-  return { vao, count: indices.length, nodes };
 };
 
 Gfx.prototype.setCommon = function (prog, world) {
@@ -335,7 +300,7 @@ Gfx.prototype.setCommon = function (prog, world) {
   let count = 0;
   for (let i = 0; i < n; i++) {
     const ring = rings[i];
-    if (!ring.alive || ring.age <= 0 || ring.amp <= 0.001) continue;
+    if (!ring.alive || ring.age <= 0 || Math.abs(ring.amp) <= 0.001) continue;
     packed[count * 4] = ring.x;
     packed[count * 4 + 1] = ring.y;
     packed[count * 4 + 2] = ring.radius;
@@ -408,41 +373,76 @@ Gfx.prototype.drawSprite = function (canvasEl, x, y, w, h, rot, tint, flipV) {
   gl.drawArrays(gl.TRIANGLES, 0, 6);
 };
 
-Gfx.prototype.setPondFrame = function (world) {
+Gfx.prototype.makeSpineTex = function () {
   const gl = this.gl;
-  const prog = this.programs.fish;
-  gl.useProgram(prog.program);
-  gl.uniform1fv(prog.u.uRim, world.rimTable);
-  gl.uniform4f(prog.u.uPond, world.pond.cx, world.pond.cy, world.pond.rx, world.pond.ry);
+  const tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, MAX_SPINE, 1, 0, gl.RGBA, gl.FLOAT, null);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  return tex;
 };
 
-Gfx.prototype.drawFish = function (mesh, canvasEl, spine, opts) {
+// the painted silhouette, one texel per sprite column, uploaded once
+Gfx.prototype.extentsTex = function (canvasEl, extents) {
+  if (this.extCache.has(canvasEl)) return this.extCache.get(canvasEl);
+  const gl = this.gl;
+  const cols = Math.max(1, Math.round(extents.length / 2));
+  const tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RG32F, cols, 1, 0, gl.RG, gl.FLOAT, extents);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  this.extCache.set(canvasEl, tex);
+  return tex;
+};
+
+Gfx.prototype.drawFish = function (opts) {
   const gl = this.gl;
   const prog = this.programs.fish;
   gl.useProgram(prog.program);
   const u = prog.u;
   gl.activeTexture(gl.TEXTURE0);
-  gl.bindTexture(gl.TEXTURE_2D, this.tex(canvasEl));
-  gl.uniform1i(u.uTex, 0);
-  gl.uniform2f(u.uRes, this.width, this.height);
-  const flat = new Float32Array(MAX_SPINE * 2);
-  const n = Math.min(spine.length, MAX_SPINE);
-  for (let i = 0; i < n; i++) {
-    flat[i * 2] = spine[i].x;
-    flat[i * 2 + 1] = spine[i].y;
-  }
-  gl.uniform2fv(u.uSpine, flat);
-  gl.uniform1i(u.uSpineN, n);
-  gl.uniform1f(u.uTexH, opts.texH);
+  gl.bindTexture(gl.TEXTURE_2D, this.tex(opts.canvas));
+  gl.uniform1i(u.uSprite, 0);
+  gl.activeTexture(gl.TEXTURE1);
+  gl.bindTexture(gl.TEXTURE_2D, this.extentsTex(opts.canvas, opts.extents));
+  gl.uniform1i(u.uExt, 1);
+  gl.activeTexture(gl.TEXTURE2);
+  gl.bindTexture(gl.TEXTURE_2D, opts.spineTex);
+  gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, opts.spineN, 1, gl.RGBA, gl.FLOAT, opts.spineData);
+  gl.uniform1i(u.uSpine, 2);
+  gl.uniform1i(u.uSpineN, opts.spineN);
+  gl.uniform1f(u.uSpriteW, opts.spriteW);
+  gl.uniform1f(u.uSpriteH, opts.spriteH);
   gl.uniform1f(u.uScale, opts.scale || 1);
-  gl.uniform1f(u.uWavePhase, opts.wavePhase || 0);
-  gl.uniform1f(u.uWaveAmp, opts.waveAmp || 0);
-  gl.uniform1f(u.uWaveK, opts.waveK || 0);
+  gl.uniform1f(u.uVC, opts.vc);
+  gl.uniform2f(u.uOffset, (opts.offset && opts.offset[0]) || 0, (opts.offset && opts.offset[1]) || 0);
   gl.uniform4fv(u.uTint, opts.tint || [1, 1, 1, 1]);
   gl.uniform1f(u.uDeepTint, opts.deepTint || 0);
   gl.uniform3f(u.uDeepColor, CONFIG.water.deepTint[0], CONFIG.water.deepTint[1], CONFIG.water.deepTint[2]);
-  gl.bindVertexArray(mesh.vao);
-  gl.drawElements(gl.TRIANGLES, mesh.count, gl.UNSIGNED_SHORT, 0);
+  gl.uniform1fv(u.uRim, this.rimTable || new Float32Array(64).fill(1));
+  gl.uniform4f(u.uPond, this.pondCx || 0, this.pondCy || 0, this.pondRx || 1, this.pondRy || 1);
+  gl.uniform2f(u.uRes, this.width, this.height);
+  gl.uniform2f(u.uPos, opts.x, opts.y);
+  gl.uniform2f(u.uSize, opts.w, opts.h);
+  gl.uniform1f(u.uRot, 0);
+  gl.uniform1f(u.uFlipV, 0);
+  gl.bindVertexArray(this.spriteVao);
+  gl.drawArrays(gl.TRIANGLES, 0, 6);
+};
+
+// the fish shader clips against the pond and needs its shoreline table
+Gfx.prototype.setPondFrame = function (world) {
+  this.rimTable = world.rimTable;
+  this.pondCx = world.pond.cx;
+  this.pondCy = world.pond.cy;
+  this.pondRx = world.pond.rx;
+  this.pondRy = world.pond.ry;
 };
 
 Gfx.prototype.drawSpinesDebug = function (world) {
@@ -549,6 +549,7 @@ uniform vec4 uTint;
 uniform float uFlipV;
 out vec2 vUV;
 out vec4 vTint;
+out vec2 vWorld;
 void main() {
   float c = cos(uRot);
   float s = sin(uRot);
@@ -558,6 +559,7 @@ void main() {
   float vy = aLocal.y + 0.5;
   vUV = vec2(aLocal.x + 0.5, uFlipV > 0.5 ? 1.0 - vy : vy);
   vTint = uTint;
+  vWorld = world;
 }`;
 
 const SPRITE_FS = `#version 300 es
@@ -572,54 +574,28 @@ void main() {
   outColor = vec4(t.rgb * vTint.rgb, t.a * vTint.a);
 }`;
 
-const FISH_VS = `#version 300 es
-precision highp float;
-layout(location = 0) in float aU;
-layout(location = 1) in float aSide;
-layout(location = 2) in float aTop;
-layout(location = 3) in float aBot;
-layout(location = 4) in float aVC;
-uniform vec2 uRes;
-uniform vec2 uSpine[${MAX_SPINE}];
-uniform int uSpineN;
-uniform float uTexH;
-uniform float uScale;
-uniform float uWavePhase;
-uniform float uWaveAmp;
-uniform float uWaveK;
-uniform vec4 uTint;
-out vec2 vUV;
-out vec4 vTint;
-out vec2 vWorld;
-void main() {
-  float fi = aU * float(uSpineN - 1);
-  int i0 = int(floor(fi));
-  int i1 = min(i0 + 1, uSpineN - 1);
-  float fr = fi - float(i0);
-  vec2 p0 = uSpine[i0];
-  vec2 p1 = uSpine[i1];
-  vec2 dir = normalize(p0 - p1 + vec2(1e-5, 1e-5));
-  vec2 perp = vec2(-dir.y, dir.x);
-  vec2 pos = mix(p0, p1, fr);
-  float wave = sin(uWavePhase - fi * uWaveK) * uWaveAmp * pow(clamp(aU, 0.0, 1.0), 1.4);
-  pos += perp * wave;
-  float ext = aSide < 0.0 ? aTop : aBot;
-  pos += perp * aSide * ext * uTexH * uScale;
-  gl_Position = vec4(pos.x / uRes.x * 2.0 - 1.0, 1.0 - pos.y / uRes.y * 2.0, 0.0, 1.0);
-  vUV = vec2(aU, aVC + aSide * ext);
-  vTint = uTint;
-  vWorld = pos;
-}`;
-
+// The fish is not drawn as a resampled sprite: every fragment walks the
+// spine, finds the closest point on it, and reads the painted texture by
+// (arclength, lateral offset). Sampling coordinates are derived from whole
+// world pixels, so a turning fish shifts its pattern by whole pixels instead
+// of shattering 1px outlines and eyes the way ordinary sprite rotation does.
 const FISH_FS = `#version 300 es
 precision highp float;
-uniform sampler2D uTex;
+precision highp int;
+uniform sampler2D uSprite;
+uniform sampler2D uSpine;   // RGBA32F, one texel per node: x, y, arclength 0..1
+uniform sampler2D uExt;     // RG32F, one texel per sprite column: top, bottom
+uniform int uSpineN;
+uniform float uSpriteW;
+uniform float uSpriteH;
+uniform float uScale;
+uniform float uVC;
+uniform vec2 uOffset;
+uniform vec4 uTint;
 uniform float uDeepTint;
 uniform vec3 uDeepColor;
 uniform float uRim[64];
 uniform vec4 uPond;
-in vec2 vUV;
-in vec4 vTint;
 in vec2 vWorld;
 out vec4 outColor;
 
@@ -638,13 +614,44 @@ float pondDFish(vec2 p) {
 }
 
 void main() {
-  // a fish under the water is hidden by the bank, never drawn over it
-  if (pondDFish(vWorld) > 1.0) discard;
-  vec4 t = texture(uTex, vUV);
-  if (t.a < 0.5) discard;
-  vec3 col = t.rgb * vTint.rgb;
-  col = mix(col, col * uDeepColor, uDeepTint);
-  outColor = vec4(col, t.a * vTint.a);
+  vec2 p = vWorld + uOffset;
+  if (pondDFish(p) > 1.02) discard;
+
+  float bestDist = 1e9;
+  float bestU = 0.0;
+  float bestSide = 1.0;
+  for (int i = 0; i < 16; i++) {
+    if (i >= uSpineN - 1) break;
+    vec4 a = texelFetch(uSpine, ivec2(i, 0), 0);
+    vec4 b = texelFetch(uSpine, ivec2(i + 1, 0), 0);
+    vec2 ab = b.xy - a.xy;
+    float denom = max(dot(ab, ab), 1e-4);
+    float t = clamp(dot(p - a.xy, ab) / denom, 0.0, 1.0);
+    vec2 c = a.xy + ab * t;
+    float dist = distance(p, c);
+    if (dist < bestDist) {
+      bestDist = dist;
+      bestU = mix(a.z, b.z, t);
+      bestSide = (ab.x * (p.y - c.y) - ab.y * (p.x - c.x)) >= 0.0 ? 1.0 : -1.0;
+    }
+  }
+
+  float lateral = bestDist * bestSide / max(uScale, 0.001);
+  float col = clamp(bestU, 0.0, 1.0) * (uSpriteW - 1.0);
+  float c0 = floor(col);
+  float cf = col - c0;
+  vec2 e0 = texelFetch(uExt, ivec2(int(c0), 0), 0).rg;
+  vec2 e1 = texelFetch(uExt, ivec2(int(min(c0 + 1.0, uSpriteW - 1.0)), 0), 0).rg;
+  vec2 ext = mix(e0, e1, cf) * uSpriteH;
+  float limit = lateral < 0.0 ? ext.x : ext.y;
+  if (abs(lateral) > limit) discard;
+
+  float v = uVC + lateral / uSpriteH;
+  vec4 texel = texture(uSprite, vec2(bestU, v));
+  if (texel.a < 0.5) discard;
+  vec3 rgb = texel.rgb * uTint.rgb;
+  rgb = mix(rgb, rgb * uDeepColor, uDeepTint);
+  outColor = vec4(rgb, texel.a * uTint.a);
 }`;
 
 const BED_VS = FLAT_VS;
@@ -679,21 +686,29 @@ void main() {
   float pebbleMask = step(0.88, pebble) * (1.0 - smoothstep(0.24, 0.34, pebbleDist)) * smoothstep(0.3, 0.6, d);
   floorCol = mix(floorCol, mix(uPebble, uSand, 0.35), pebbleMask * 0.85);
   // fine sand ripples in the shallows
-  float ripples = sin(dot(p, normalize(vec2(0.7, 0.9))) * 0.22 + vnoise(p * 0.02) * 6.0);
+  // silt ripples: wavelength and heading both drift across the floor, so the
+  // pond bed never reads as parallel hatching
+  float ripWarp = vnoise(p * 0.011 + 3.0) * 11.0 + vnoise(p * 0.038 + 17.0) * 3.0;
+  float ripples = sin(p.x * 0.05 + p.y * 0.032 + ripWarp);
   floorCol *= 1.0 + ripples * 0.028 * smoothstep(0.32, 0.62, d);
 
-  // caustics: crossing noise fields; the bright net is where they agree
-  vec2 cq1 = (p + g * 2.0) * 0.082 + vec2(uTime * 0.030, -uTime * 0.022);
-  vec2 cq2 = (p + g * 2.0) * 0.072 + vec2(-uTime * 0.026, uTime * 0.034) + 23.7;
-  float cn1 = vnoise(cq1) + 0.5 * vnoise(cq1 * 2.1 + 5.3);
-  float cn2 = vnoise(cq2) + 0.5 * vnoise(cq2 * 1.9 + 9.1);
-  float caust = pow(clamp(1.0 - abs(cn1 - cn2) * 2.6, 0.0, 1.0), 7.0);
+  // caustics: two drifting noise fields, bright where their difference is
+  // small. The clock steps in whole frames so the light net never crawls
+  // through sub-pixel positions and shimmers.
+  float tq = floor(uTime * 7.0) * (1.0 / 7.0);
+  vec2 cq1 = (p + g * 2.0) * 0.046 + vec2(tq * 0.52, -tq * 0.29);
+  vec2 cq2 = (p + g * 2.0) * 0.038 + vec2(-tq * 0.37, tq * 0.58) + 23.7;
+  float cn1 = vnoise(cq1) * 0.68 + vnoise(cq2 * 1.7 + 5.3) * 0.32;
+  float cn2 = vnoise(cq2) * 0.68 + vnoise(cq1 * 1.31 + 9.1) * 0.32;
+  float caust = pow(clamp(1.0 - abs(cn1 - cn2) * 2.1, 0.0, 1.0), 5.0);
+  caust += pow(clamp(1.0 - abs(cn2 - cn1) * 4.5, 0.0, 1.0), 8.0) * 0.4;
   caust *= 0.15 + 0.85 * pow(clamp(d * 1.6, 0.0, 1.0), 1.5);
-  floorCol += uSun * caust * uCaustics;
+  floorCol += uSun * caust * uCaustics * 1.1;
 
   // slow diagonal shafts of light: one broad, soft band rather than streaks
-  float shaft = sin(dot(p, normalize(vec2(-0.55, -0.75))) * 0.021 + uTime * 0.09 + vnoise(p * 0.02) * 2.6);
-  floorCol += uSun * smoothstep(0.55, 1.0, shaft) * 0.02;
+  float shaft = sin(dot(p, normalize(vec2(-0.55, -0.75))) * 0.0185 + vnoise(p * 0.021) * 3.4 + uTime * 0.07);
+  float shaftB = sin(dot(p, normalize(vec2(0.46, -0.68))) * 0.0132 + vnoise(p * 0.014 + 41.0) * 3.0 - uTime * 0.05);
+  floorCol += uSun * (smoothstep(0.62, 1.0, shaft) * 0.017 + smoothstep(0.7, 1.0, shaftB) * 0.013);
 
   outColor = vec4(floorCol, 1.0);
 }`;
@@ -713,7 +728,13 @@ void main() {
   float d = pondD(p);
   float mask = 1.0 - smoothstep(0.965, 1.03, d);
 
-  vec2 disp = (ringDisp(p) * uBend + swellGrad(p) * 26.0) * mask;
+  // The swell bends what sits under it, but only by a fraction of a pixel:
+  // a large coherent offset drags the floor sideways along every wavefront
+  // and the pond reads as parallel hatching. Instead the offset is kept
+  // sub-pixel and dithered per pixel, so the water looks alive without bands.
+  float jt = floor(uTime * 7.0) * (1.0 / 7.0);
+  vec2 jitter = (vec2(vnoise(p * 0.29 + jt), vnoise(p * 0.31 + 17.0 - jt)) - 0.5) * 1.25;
+  vec2 disp = (ringDisp(p) * uBend + swellGrad(p) * 6.0 + jitter) * mask;
   disp = clamp(disp, vec2(-uMaxBend), vec2(uMaxBend));
   disp = floor(disp + 0.5);                       // whole pixels only
   vec3 col = texture(uUnder, vUV + disp / uRes).rgb;
@@ -728,10 +749,30 @@ void main() {
   col = mix(col, mix(col, uShallowColor, uShallowMix), shallowAmt * mask);
   col += vec3(uShallowLift) * shallowAmt * mask;
 
-  // one soft specular off the wave slope; no ring highlights
-  vec2 n = normalize(disp + vec2(1e-5, 1e-5));
-  float sheen = pow(max(dot(n, normalize(uLight)), 0.0), 4.0);
-  col += uSun * sheen * uSpecular * mask * smoothstep(0.4, 1.4, length(disp));
+  // broad patches of light on the surface, drifting slowly
+  float lightPatch = vnoise(p * 0.0128 + vec2(uTime * 0.007, -uTime * 0.005));
+  float lightPatchB = vnoise(p * 0.031 - 7.0 + vec2(-uTime * 0.01, uTime * 0.008));
+  col += uSun * ((lightPatch - 0.5) * 0.05 + (lightPatchB - 0.5) * 0.022) * mask;
+
+  // sun glitter: sparse sparkles riding the swell, clocked so they blink
+  // between whole frames rather than sliding about
+  float gt = floor(uTime * 7.0) * (1.0 / 7.0);
+  float gl = vnoise(p * 0.23 + vec2(gt * 0.9, -gt * 0.62));
+  float sparkle = pow(max(gl - 0.8, 0.0) * 5.0, 2.4);
+  float energy = clamp(length(disp) / 6.0, 0.0, 1.0);
+  col += uSun * sparkle * (0.05 + 0.45 * energy) * mask;
+
+  // A ripple crest is where the light lands: a bright line along the crest,
+  // a thin shadow on its trailing face, and extra sheen on the sun side.
+  // Reading the crest straight off the rings keeps the highlight on the wave
+  // instead of letting the refraction drag dark floor around, which is what
+  // made clicks look like grooves cut into the water.
+  float crest = clamp(ringCrest(p, 0.0), 0.0, 1.4);
+  float crestShadow = clamp(ringCrest(p, 2.4), 0.0, 1.2);
+  col += uSun * crest * 0.115 * mask;
+  col *= 1.0 - crestShadow * 0.085 * mask;
+  vec2 crestNormal = normalize(disp + vec2(1e-5, 1e-5));
+  col += uSun * crest * max(dot(crestNormal, normalize(uLight)), 0.0) * uSpecular * 0.9 * mask;
 
   outColor = vec4(col, 1.0);
 }`;
