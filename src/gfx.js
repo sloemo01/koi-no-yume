@@ -754,13 +754,46 @@ void main() {
   float lightPatchB = vnoise(p * 0.031 - 7.0 + vec2(-uTime * 0.01, uTime * 0.008));
   col += uSun * ((lightPatch - 0.5) * 0.05 + (lightPatchB - 0.5) * 0.022) * mask;
 
-  // sun glitter: sparse sparkles riding the swell, clocked so they blink
-  // between whole frames rather than sliding about
-  float gt = floor(uTime * 7.0) * (1.0 / 7.0);
+  // ---- white shimmer -------------------------------------------------
+  // Sun glint: where the swell tilts the surface so it throws the sun back
+  // at the eye, the water goes white. The tilt comes from the swell slope,
+  // so the glint travels with the waves; a slow noise field groups it into
+  // patches so it never lines up into parallel streaks, and the levels are
+  // quantised so it stays crisp pixel art.
+  float gt = floor(uTime * 9.0) * (1.0 / 9.0);
+  vec3 sunDir = normalize(vec3(normalize(uLight), 0.58));
+  // fine surface noise does the breaking up: without it the glint just runs
+  // along the wave crests and the pond looks hatched
+  // Tiny wavelets whose crests face the sun. The glint lands on their lit
+  // faces, which is why sunlight on water reads as short dashes pointing at
+  // the sun rather than as speckle or as parallel lines: the dash direction
+  // follows the light, the dash length comes from the noise, and both the
+  // wavelet phase and the patch masks wander.
+  float az = atan(uLight.y, uLight.x);
+  vec2 along = vec2(cos(az), sin(az));
+  vec2 across = vec2(-along.y, along.x);
+  float wavelet = sin(dot(p, across) * 0.42 + vnoise(p * 0.058) * 5.2 + gt * 1.15);
+  float waveletB = sin(dot(p, across) * 0.83 + vnoise(p * 0.11 + 4.0) * 4.4 - gt * 1.7);
+  vec2 fine = vec2(vnoise(p * 0.38 + gt * 0.3), vnoise(p * 0.41 + 23.0 - gt * 0.27)) - 0.5;
+  vec2 tilt = swellGrad(p) * 14.0 + along * (wavelet * 19.0 + waveletB * 9.0) + fine * 8.0;
+  vec3 nrm = normalize(vec3(tilt, 1.0));
+  float glint = pow(max(dot(nrm, sunDir), 0.0), 18.0);
+  // break the lit streaks along their length, or they read as painted bands
+  float dash = smoothstep(0.3, 0.76, vnoise(p * 0.185 + vec2(gt * 0.25, -gt * 0.22)));
+  // three scales of mask: broad calm water, patches that glint, and a slow
+  // breath inside them. Together they keep the pond from sparkling evenly.
+  float broad = smoothstep(0.36, 0.68, vnoise(p * 0.0135 + vec2(gt * 0.032, -gt * 0.024)));
+  float patches = smoothstep(0.42, 0.7, vnoise(p * 0.052 + vec2(gt * 0.07, -gt * 0.055)));
+  float micro = 0.35 + 0.65 * vnoise(p * 0.21 - gt * 0.19);
+  glint *= broad * patches * micro * dash * 5.6;
+  glint = floor(clamp(glint, 0.0, 1.0) * 3.0) / 3.0;
+  col = mix(col, vec3(0.97, 0.995, 0.96), glint * 0.72 * mask);
+
+  // plus the small hard sparkles that blink between whole frames
   float gl = vnoise(p * 0.23 + vec2(gt * 0.9, -gt * 0.62));
-  float sparkle = pow(max(gl - 0.8, 0.0) * 5.0, 2.4);
+  float sparkle = pow(max(gl - 0.78, 0.0) * 5.5, 2.2);
   float energy = clamp(length(disp) / 6.0, 0.0, 1.0);
-  col += uSun * sparkle * (0.05 + 0.45 * energy) * mask;
+  col += uSun * sparkle * (0.06 + 0.5 * energy) * mask;
 
   // A ripple crest is where the light lands: a bright line along the crest,
   // a thin shadow on its trailing face, and extra sheen on the sun side.
