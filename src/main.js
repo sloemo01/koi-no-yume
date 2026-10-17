@@ -408,7 +408,7 @@ function findPadAt(x, y) {
   let bestD = 1e9;
   for (const pad of pads) {
     const d = Math.hypot(pad.x - x, pad.y - y);
-    if (d < pad.r + 4 && d < bestD) {
+    if (d < pad.r && d < bestD) {
       best = pad;
       bestD = d;
     }
@@ -487,8 +487,12 @@ function handlePointerUp() {
   if (st.dragPad) {
     const pad = st.dragPad;
     pad.held = false;
-    pad.homeX = clamp(pad.homeX, 8, Pond.world.res.x - 8);
-    pad.homeY = clamp(pad.homeY, 8, Pond.world.res.y - 8);
+    // a pad you move stays where you put it: its home becomes the drop spot,
+    // otherwise it slides back and the drag reads as backwards
+    pad.homeX = clamp(pad.x, 8, Pond.world.res.x - 8);
+    pad.homeY = clamp(pad.y, 8, Pond.world.res.y - 8);
+    pad.driftX = 0;
+    pad.driftY = 0;
     // letting go nudges the water once
     spawnRipple("splash", pad.x, pad.y, { scale: 0.9 });
     Sound.plop(0.5);
