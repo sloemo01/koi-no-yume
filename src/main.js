@@ -218,6 +218,8 @@ function boot() {
       })),
     padIndexOf: (pad) => padIndexOf(pad),
     hitGrid: (i, step, span) => hitGrid(i, step || 3, span || 36),
+    grabSelfTest: () => grabSelfTest(),
+    pointerScale: () => pointerScale(canvas),
     selectedPad: () => (Pond.state.selPad
       ? { x: +Pond.state.selPad.x.toFixed(1), y: +Pond.state.selPad.y.toFixed(1), r: Pond.state.selPad.r }
       : null),
@@ -372,8 +374,17 @@ function screenToWorld(canvas, ev) {
 // the canvas rectangle's ratio with raw canvas pixels and never divided by the
 // pixel size; it only worked when the backing store happened to equal the CSS
 // size, which is exactly the kind of accident that hides for hours.
-function pointerPos(canvas, x, y) {
+function pointerScale(canvas) {
   const rect = canvas.getBoundingClientRect();
+  const res = (Pond.world && Pond.world.res) || { x: canvas.width, y: canvas.height };
+  Pond.state.kx = res.x / rect.width;
+  Pond.state.ky = res.y / rect.height;
+  Pond.state.rect = { left: rect.left, top: rect.top, width: rect.width, height: rect.height };
+  return Pond.state.rect;
+}
+
+function pointerPos(canvas, x, y) {
+  const rect = Pond.state.rect || pointerScale(canvas);
   const res = (Pond.world && Pond.world.res) || { x: canvas.width, y: canvas.height };
   // Each axis gets its own ratio. The renderer scales y by res.y / viewport
   // height, and using the x ratio for y was off by 8 percent on a non-square
@@ -383,6 +394,58 @@ function pointerPos(canvas, x, y) {
     x: (x - rect.left) * (res.x / rect.width),
     y: (y - rect.top) * (res.y / rect.height),
   };
+}
+
+// Boot check. Round trips the pointer conversion through world and back, then
+// asks the hit test for a pad at its centre and near its rim. If any of it
+// fails it says so on screen with the numbers, because a silent coordinate
+// mismatch is what ate a whole day of this.
+function grabSelfTest() {
+  const canvas = document.getElementById("pond");
+  const pads = Pond.scenery.pads;
+  const report = { ok: true, checks: [] };
+  if (!pads.length) return { ok: false, checks: ["no pads"] };
+  const rect = pointerScale(canvas);
+  const res = Pond.world.res;
+  const pad = pads[0];
+  const cssX = rect.left + pad.x * (rect.width / res.x);
+  const cssY = rect.top + pad.y * (rect.height / res.y);
+  const back = pointerPos(canvas, cssX, cssY);
+  const err = Math.hypot(back.x - pad.x, back.y - pad.y);
+  report.checks.push({ what: "pointer round trip", errorPx: +err.toFixed(2), pass: err < 1 });
+  if (err >= 1) report.ok = false;
+  const at = (x, y) => {
+    const hit = findPadAt(x, y, 1.0);
+    return hit === pad;
+  };
+  const half = pad.size * 0.5;
+  const centre = at(pad.x, pad.y);
+  const rim = [0, 90, 180, 270].map((a) => {
+    const rad = (a * Math.PI) / 180;
+    return { angle: a, pass: at(pad.x + Math.cos(rad) * half * 0.85, pad.y + Math.sin(rad) * half * 0.85) };
+  });
+  report.checks.push({ what: "hit test at centre", pass: centre });
+  report.checks.push({ what: "hit test near rim", pass: rim.every((r) => r.pass), detail: rim });
+  if (!centre || !rim.every((r) => r.pass)) report.ok = false;
+
+  let el = document.getElementById("grab-warning");
+  if (!report.ok) {
+    if (!el) {
+      el = document.createElement("div");
+      el.id = "grab-warning";
+      el.style.cssText = "position:fixed;left:10px;bottom:110px;z-index:90;pointer-events:none;"
+        + "font:12px/1.5 ui-monospace,Menlo,monospace;color:#ffe9e9;background:rgba(120,16,16,.86);"
+        + "padding:8px 11px;border-radius:6px;white-space:pre";
+      document.body.appendChild(el);
+    }
+    el.textContent = "GRAB SELF TEST FAILED\n"
+      + "round trip error " + err.toFixed(2) + " world px\n"
+      + "centre " + (centre ? "ok" : "DEAD") + "  rim " + rim.filter((r) => !r.pass).map((r) => r.angle + " deg").join(",") + " DEAD\n"
+      + "rect " + Math.round(rect.width) + "x" + Math.round(rect.height) + "  world " + res.x + "x" + res.y;
+  } else if (el) {
+    el.remove();
+  }
+  return report;
 }
 
 // A live map of where a pad answers to a press, point by point, so the grab
@@ -1043,6 +1106,8 @@ function installInput(canvas) {
     // this page is seeing your pointer at all
     PROBE.counters.moves = (PROBE.counters.moves || 0) + 1;
     const hp = pointerPos(canvas, ev.clientX, ev.clientY);
+    st.pointer.x = hp.x;
+    st.pointer.y = hp.y;
     st.hoverPad = st.dragPad || findPadAt(hp.x, hp.y, 1.0);
     // if the button is down but this page never saw a press, something above
     // the page ate it. Sweep onto a pad with the button held and you take it.
