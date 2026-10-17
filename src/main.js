@@ -333,6 +333,26 @@ function fit(initial) {
     // fish keep swimming, they just move with the new dimensions
     const kx = w / oldW;
     const ky = h / oldH;
+    // and the scenery has to move with them. Without this the pads keep their
+    // old coordinates while the world changes size, so every pad drifts off
+    // the spot you can see and presses land on water.
+    if (kx !== 1 || ky !== 1) {
+      const scale = (o) => {
+        if (typeof o.x === "number") o.x *= kx;
+        if (typeof o.y === "number") o.y *= ky;
+        if (typeof o.homeX === "number") o.homeX *= kx;
+        if (typeof o.homeY === "number") o.homeY *= ky;
+        if (typeof o.driftX === "number") o.driftX = 0;
+        if (typeof o.driftY === "number") o.driftY = 0;
+      };
+      for (const pad of Pond.scenery.pads) scale(pad);
+      for (const f of Pond.scenery.padFlowers) scale(f);
+      for (const m of Pond.scenery.surfaceMoss) scale(m);
+      for (const d of Pond.scenery.duckweed) scale(d);
+      for (const wd of Pond.scenery.weeds) scale(wd);
+      for (const sh of Pond.scenery.shore) scale(sh);
+    }
+    pointerScale(Pond.gfx.canvas);
     for (const k of world.koi) {
       k.x *= kx;
       k.y *= ky;
