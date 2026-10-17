@@ -226,6 +226,23 @@ function boot() {
       PROBE.on = on === undefined ? !PROBE.on : !!on;
       return PROBE.on;
     },
+    scenery: () =>
+      Pond.scenery.pads.map((p) => {
+        let px = null;
+        try {
+          const g = p.tex.getContext("2d");
+          const d = g.getImageData(Math.floor(p.tex.width / 2), Math.floor(p.tex.height / 2), 1, 1).data;
+          px = [d[0], d[1], d[2], d[3]];
+        } catch (e) {
+          px = "ERR:" + e.message;
+        }
+        return {
+          x: +p.x.toFixed(1), y: +p.y.toFixed(1), size: p.size, r: p.r,
+          shade: p.shade === undefined ? "undefined" : p.shade,
+          held: !!p.held, rot: +p.rot.toFixed(2), tex: p.tex ? [p.tex.width, p.tex.height] : null,
+          centrePixel: px, home: [p.homeX, p.homeY],
+        };
+      }),
     moss: () =>
       Pond.scenery.surfaceMoss.map((m) => ({
         x: +m.x.toFixed(1), y: +m.y.toFixed(1), size: +m.size.toFixed(1), held: !!m.held,
@@ -923,12 +940,9 @@ function drawFrame() {
       deepTint: 0,
     });
   }
-  // pads cast their own shape on the floor
-  for (const pad of scenery.pads) {
-    const bob = waterBobAt(pad.x, pad.y, time) * 0.6;
-    const so = shadowOffset(3.2);
-    gfx.drawSprite(pad.tex, pad.x + so[0], pad.y + so[1] + bob * 0.4, pad.size * 0.99, pad.size * 0.96, pad.rot, [SHADOW_TINT[0], SHADOW_TINT[1], SHADOW_TINT[2], CONFIG.shadows.padAlpha], false);
-  }
+  // Pad shadows used to be drawn down here, under the water, which meant the
+  // water's refraction could slide them away from their pad while you dragged
+  // one. They are drawn in the floating pass now, right under the pad.
   for (const we of scenery.duckweed) {
     const bob = waterBobAt(we.x, we.y, time) * 0.5;
     const so = shadowOffset(1.9);
@@ -1022,6 +1036,10 @@ function drawFrame() {
   }
   for (const pad of scenery.pads) {
     const bob = waterBobAt(pad.x, pad.y, time) * 0.6;
+    const so = shadowOffset(3.2);
+    // one pass, drawn together, so nothing can separate them
+    gfx.drawSprite(pad.tex, pad.x + so[0], pad.y + so[1] + bob * 0.5, pad.size * 0.99, pad.size * 0.96, pad.rot,
+      [SHADOW_TINT[0], SHADOW_TINT[1], SHADOW_TINT[2], CONFIG.shadows.padAlpha], false);
     const s = pad.shade;
     gfx.drawSprite(pad.tex, pad.x, pad.y + bob, pad.size, pad.size, pad.rot, [s, s, s, 1], false);
   }
