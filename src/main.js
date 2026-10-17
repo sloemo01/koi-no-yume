@@ -1006,6 +1006,9 @@ function installInput(canvas) {
     // a big cursor-following pet on screen this is the only honest readout of
     // your pointer position.
     markPointer(ev.clientX, ev.clientY);
+    // counted before any early return: this is the number that says whether
+    // this page is seeing your pointer at all
+    PROBE.counters.moves = (PROBE.counters.moves || 0) + 1;
     const hp = pointerPos(canvas, ev.clientX, ev.clientY);
     st.hoverPad = st.dragPad || findPadAt(hp.x, hp.y, 1.0);
     // if the button is down but this page never saw a press, something above
@@ -1034,8 +1037,6 @@ function installInput(canvas) {
     markPointer(ev.clientX, ev.clientY);
     if (st.dragPad) {
       probeTrace("move (held)", ev.clientX, ev.clientY, { pad: padIndexOf(st.dragPad), padModelAt: [+st.dragPad.x.toFixed(1), +st.dragPad.y.toFixed(1)] });
-    } else {
-      PROBE.counters.moves = (PROBE.counters.moves || 0) + 1;
     }
     handlePointerMove(p.x, p.y);
   });
