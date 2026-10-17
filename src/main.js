@@ -106,7 +106,6 @@ function params() {
   const q = new URLSearchParams(window.location.search);
   const out = {};
   if (q.has("seed")) out.seed = parseInt(q.get("seed"), 10) || 1;
-  if (q.has("px")) out.pixelSize = clamp(parseInt(q.get("px"), 10) || 4, 2, 8);
   if (q.has("koi")) out.koiCount = clamp(parseInt(q.get("koi"), 10) || 12, 1, CONFIG.koi.maxCount);
   if (q.has("t")) out.fastForward = Math.max(0, parseFloat(q.get("t")) || 0);
   if (q.has("demo")) out.demo = q.get("demo") === "1";
@@ -273,7 +272,7 @@ function boot() {
     dragTo: (x, y) => handlePointerMove(x, y),
     dragEnd: () => handlePointerUp(),
     resize: () => fit(false),
-    setPixelSize: (p) => setPixelSize(p),
+// one pixel scale now: see CONFIG.pixelSize
     freeze: (v) => {
       Pond.state.freeze = !!v;
       return Pond.state.freeze;
@@ -722,9 +721,9 @@ function handleKey(key) {
   }
   if (key === "[") return setKoiCount(st.koiCount - 2);
   if (key === "]") return setKoiCount(st.koiCount + 2);
-  if (key === "1") return setPixelSize(6);
-  if (key === "2") return setPixelSize(4);
-  if (key === "3") return setPixelSize(3);
+// one pixel scale now: see CONFIG.pixelSize
+// one pixel scale now: see CONFIG.pixelSize
+// one pixel scale now: see CONFIG.pixelSize
   if (key === "d") {
     st.showSpines = !st.showSpines;
     return true;
@@ -1195,7 +1194,7 @@ function installInput(canvas) {
 
   $("#btn-sound").on("click", () => setSound(!st.sound));
   $("#row-px").on("click", "button.px", function () {
-    setPixelSize(parseInt($(this).attr("data-px"), 10));
+// one pixel scale now: see CONFIG.pixelSize
   });
   $("#btn-koi").on("click", () => setKoiCount(st.koiCount + 2));
   $("#btn-koi-less").on("click", () => setKoiCount(st.koiCount - 2));

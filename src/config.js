@@ -6,7 +6,7 @@ const CONFIG = {
 
   // backing-store divisor: the scene renders at window / pixelSize and the
   // canvas is stretched back up with image-rendering: pixelated
-  pixelSize: 4,
+  pixelSize: 6,
 
   ponds: {
     // the water fills the whole canvas: the shoreline is pushed outside the
