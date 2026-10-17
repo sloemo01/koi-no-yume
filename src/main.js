@@ -497,6 +497,18 @@ function handlePointerMove(x, y) {
     return;
   }
   if (!st.pointer.down) return;
+  // a drag is in flight and a pad is under the pointer: take it. If a grab
+  // ever gets lost, the pad must not start moving against your hand; instead
+  // the pointer keeps hold of whatever pad it is over.
+  const under = findPadAt(x, y);
+  if (under) {
+    under.held = true;
+    under.grabX = under.x - x;
+    under.grabY = under.y - y;
+    st.dragPad = under;
+    probeDragStart(st.pointerCss ? st.pointerCss[0] : x, st.pointerCss ? st.pointerCss[1] : y, x, y, under);
+    return;
+  }
   // dragging across open water: a line of small rings and a nudge to
   // whichever koi are right there
   const dx = x - st.lastDragSpawn.x;
@@ -822,7 +834,7 @@ function installInput(canvas) {
     st.pointerCss = [Math.round(ev.clientX), Math.round(ev.clientY)];
     handlePointerMove(p.x, p.y);
   });
-  $(window).on("pointerup pointercancel blur", (ev) => {
+  $(window).on("pointerup pointercancel", (ev) => {
     const last = PROBE.clicks[PROBE.clicks.length - 1];
     if (last && ev && ev.clientX !== undefined && !last.up) {
       const up = pointerPos(document.getElementById("pond"), ev.clientX, ev.clientY);
