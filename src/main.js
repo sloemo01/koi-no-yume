@@ -677,6 +677,8 @@ const PROBE = {
   stuck: [],
   mismatches: [],
   watch: [],
+  trace: [],
+  divergence: [],
   counters: { clicks: 0, ripples: 0, grabbed: 0, fed: 0, water: 0, mismatch: 0, stuck: 0 },
 };
 PROBE.noteRipple = probeRipple;
@@ -743,6 +745,12 @@ function probeRipple(kind, x, y, n) {
 
 // a ripple whose progress stops dead is a stalled jQuery job, not a slow wave
 function probeTick() {
+  probeReadout();
+  const held = Pond.state.dragPad;
+  if (held && Pond.world.time - (PROBE.lastDivT || 0) > 0.4) {
+    PROBE.lastDivT = Pond.world.time;
+    padDivergenceCheck(held);
+  }
   if (!PROBE.watch.length) return;
   for (const rec of PROBE.watch) {
     if (rec.done) continue;
@@ -774,6 +782,82 @@ function probeTick() {
       probePush(PROBE.stuck, { kind: rec.kind, world: rec.world, at: rec.t, radius: rec.maxRadius });
     }
   }
+}
+
+// ---- full input recorder ------------------------------------------------
+// Every pointer event, what it hit, and, crucially, where the pad being
+// dragged is actually DRAWN (measured from the pixels) versus where the
+// simulation thinks it is. Those two diverging is invisible to every test
+// that only reads the model, which is how this bug hid for so long.
+function probeTrace(type, cssX, cssY, extra) {
+  if (PROBE.trace.length > 300) PROBE.trace.shift();
+  PROBE.trace.push({ t: +Pond.world.time.toFixed(2), type: type, css: [Math.round(cssX), Math.round(cssY)], extra: extra || null });
+  PROBE.counters.events = (PROBE.counters.events || 0) + 1;
+}
+
+function padIndexOf(pad) {
+  return Pond.scenery.pads.indexOf(pad);
+}
+
+function padDrawnCentre(pad) {
+  const g = Pond.gfx, gl = g.gl;
+  if (!PROBE.pxa) PROBE.pxa = new Uint8Array(4);
+  const pxa = PROBE.pxa;
+  let sx = 0, sy = 0, n = 0;
+  gl.bindFramebuffer(gl.FRAMEBUFFER, g.targets.scene.fbo);
+  for (let dy = -22; dy <= 22; dy += 2) {
+    for (let dx = -22; dx <= 22; dx += 2) {
+      const x = Math.round(pad.x + dx), y = Math.round(g.height - 1 - (pad.y + dy));
+      if (x < 0 || y < 0 || x >= g.width || y >= g.height) continue;
+      gl.readPixels(x, y, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pxa);
+      if (pxa[1] > pxa[0] + 10 && pxa[1] > pxa[2] + 18) { sx += x; sy += y; n++; }
+    }
+  }
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  if (n < 12) return { x: null, y: null, pixels: n };
+  return { x: sx / n, y: g.height - 1 - sy / n, pixels: n };
+}
+
+function padDivergenceCheck(pad) {
+  const drawn = padDrawnCentre(pad);
+  if (drawn.x === null) {
+    PROBE.lastDiv = { paintedPixelsNearModel: drawn.pixels, note: "no pad painted where the simulation says it is" };
+    if (PROBE.divergence.length < 40) {
+      probePush(PROBE.divergence, { t: +Pond.world.time.toFixed(2), pad: padIndexOf(pad), note: "no green found at the pad's model position", drawnPixels: drawn.pixels });
+    }
+    return;
+  }
+  const dx = drawn.x - pad.x, dy = drawn.y - pad.y, d = Math.hypot(dx, dy);
+  PROBE.lastDiv = {
+    d: +d.toFixed(1), dx: +dx.toFixed(1), dy: +dy.toFixed(1),
+    model: [+pad.x.toFixed(1), +pad.y.toFixed(1)], drawn: [+drawn.x.toFixed(1), +drawn.y.toFixed(1)], pixels: drawn.pixels,
+  };
+  if (d > 6 && PROBE.divergence.length < 40) {
+    probePush(PROBE.divergence, { t: +Pond.world.time.toFixed(2), pad: padIndexOf(pad), d: +d.toFixed(1), dx: +dx.toFixed(1), dy: +dy.toFixed(1) });
+  }
+}
+
+function probeReadout() {
+  let el = document.getElementById("probe-readout");
+  if (!PROBE.on) {
+    if (el) el.remove();
+    return;
+  }
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "probe-readout";
+    el.style.cssText = "position:fixed;left:10px;top:10px;z-index:70;pointer-events:none;"
+      + "font:11px/1.5 ui-monospace,Menlo,monospace;color:#e9e3d2;background:rgba(10,24,30,.72);"
+      + "padding:6px 9px;border-radius:6px;white-space:pre";
+    document.body.appendChild(el);
+  }
+  const last = PROBE.trace[PROBE.trace.length - 1];
+  const held = Pond.state.dragPad ? padIndexOf(Pond.state.dragPad) : null;
+  const d = PROBE.lastDiv;
+  el.textContent =
+    "events " + (PROBE.counters.events || 0) + "  held pad " + (held === null ? "-" : held) + "\n"
+    + "last " + (last ? last.type + " @ " + last.css.join(",") : "-") + "\n"
+    + "drawn vs model " + (d && d.d ? d.d + "px (" + d.dx + "," + d.dy + ")" : "-");
 }
 
 function probeDragStart(cssX, cssY, worldX, worldY, pad) {
@@ -837,6 +921,11 @@ function probeReport() {
     lastRipples: tail(PROBE.ripples, 8).map((r) => ({
       kind: r.kind, world: r.world, n: r.n, maxRadius: r.maxRadius, advanced: r.advancing, stuck: r.stuck,
     })),
+    events: PROBE.counters.events || 0,
+    moves: PROBE.counters.moves || 0,
+    lastTrace: tail(PROBE.trace, 40),
+    divergence: tail(PROBE.divergence, 12),
+    lastDiv: PROBE.lastDiv || null,
     lastTouches: tail(PROBE.ripples.filter((r) => r.kind === "touch" || r.kind === "splash"), 6).map((r) => ({
       kind: r.kind, world: r.world, n: r.n, maxRadius: r.maxRadius, advanced: r.advancing, stuck: r.stuck, done: r.done,
     })),
@@ -891,6 +980,9 @@ function installInput(canvas) {
       // so no world-space convention can turn the movement against your hand.
       st.lastDragCss = [ev.clientX, ev.clientY];
     }
+    probeTrace("down", ev.clientX, ev.clientY, st.dragPad
+      ? { hit: "pad " + padIndexOf(st.dragPad), grabDistance: +Math.hypot(st.dragPad.x - p.x, st.dragPad.y - p.y).toFixed(1) }
+      : (st.hoverPad ? { hit: "moss mat or other floater" } : { hit: "water" }));
     probeClick(st.dragPad ? "grab" : "water", ev.clientX, ev.clientY, p.x, p.y,
       st.dragPad ? { grabbed: [+st.dragPad.x.toFixed(1), +st.dragPad.y.toFixed(1)] } : {});
     if (st.dragPad) probeDragStart(ev.clientX, ev.clientY, p.x, p.y, st.dragPad);
@@ -904,6 +996,11 @@ function installInput(canvas) {
     if (!st.pointer.down && !st.dragPad) return;
     const p = pointerPos(canvas, ev.clientX, ev.clientY);
     st.pointerCss = [Math.round(ev.clientX), Math.round(ev.clientY)];
+    if (st.dragPad) {
+      probeTrace("move (held)", ev.clientX, ev.clientY, { pad: padIndexOf(st.dragPad), padModelAt: [+st.dragPad.x.toFixed(1), +st.dragPad.y.toFixed(1)] });
+    } else {
+      PROBE.counters.moves = (PROBE.counters.moves || 0) + 1;
+    }
     handlePointerMove(p.x, p.y);
   });
   // only a real pointerup ends a drag; a cancel keeps the pad in hand until
@@ -914,6 +1011,8 @@ function installInput(canvas) {
       const up = pointerPos(document.getElementById("pond"), ev.clientX, ev.clientY);
       last.up = [+up.x.toFixed(1), +up.y.toFixed(1)];
     }
+    probeTrace("up", ev && ev.clientX !== undefined ? ev.clientX : -1, ev && ev.clientY !== undefined ? ev.clientY : -1, { pad: st.dragPad ? padIndexOf(st.dragPad) : null });
+    if (st.dragPad) padDivergenceCheck(st.dragPad);
     probeDragEnd();
     handlePointerUp();
   });
