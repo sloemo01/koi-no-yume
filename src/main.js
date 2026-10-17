@@ -784,6 +784,24 @@ function probeTick() {
 // dragged is actually DRAWN (measured from the pixels) versus where the
 // simulation thinks it is. Those two diverging is invisible to every test
 // that only reads the model, which is how this bug hid for so long.
+// The page draws its own pointer ring. A desktop pet sitting on the arrow
+// hides the one the OS draws, and then you aim with the pet, which lags and
+// hangs below the real pointer. This ring is always exactly where the pointer
+// the canvas sees is, so you aim with the ring.
+function markPointer(cssX, cssY) {
+  let el = document.getElementById("pointer-ring");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "pointer-ring";
+    el.style.cssText = "position:fixed;width:84px;height:84px;margin:-42px 0 0 -42px;border-radius:50%;"
+      + "border:2px solid rgba(255,255,255,.85);box-shadow:0 0 0 1px rgba(0,0,0,.35) inset;"
+      + "pointer-events:none;z-index:80;mix-blend-mode:difference;transition:transform .06s linear";
+    document.body.appendChild(el);
+  }
+  el.style.left = cssX + "px";
+  el.style.top = cssY + "px";
+}
+
 function probeTrace(type, cssX, cssY, extra) {
   if (PROBE.trace.length > 300) PROBE.trace.shift();
   PROBE.trace.push({ t: +Pond.world.time.toFixed(2), type: type, css: [Math.round(cssX), Math.round(cssY)], extra: extra || null });
@@ -975,6 +993,7 @@ function installInput(canvas) {
       // so no world-space convention can turn the movement against your hand.
       st.lastDragCss = [ev.clientX, ev.clientY];
     }
+    markPointer(ev.clientX, ev.clientY);
     probeTrace("down", ev.clientX, ev.clientY, st.dragPad
       ? { hit: "pad " + padIndexOf(st.dragPad), grabDistance: +Math.hypot(st.dragPad.x - p.x, st.dragPad.y - p.y).toFixed(1) }
       : { hit: "water" });
@@ -986,11 +1005,13 @@ function installInput(canvas) {
     // where the real pointer actually is, so a pad can light up under it. With
     // a big cursor-following pet on screen this is the only honest readout of
     // your pointer position.
+    markPointer(ev.clientX, ev.clientY);
     const hp = pointerPos(canvas, ev.clientX, ev.clientY);
     st.hoverPad = st.dragPad || findPadAt(hp.x, hp.y, 1.0);
     if (!st.pointer.down && !st.dragPad) return;
     const p = pointerPos(canvas, ev.clientX, ev.clientY);
     st.pointerCss = [Math.round(ev.clientX), Math.round(ev.clientY)];
+    markPointer(ev.clientX, ev.clientY);
     if (st.dragPad) {
       probeTrace("move (held)", ev.clientX, ev.clientY, { pad: padIndexOf(st.dragPad), padModelAt: [+st.dragPad.x.toFixed(1), +st.dragPad.y.toFixed(1)] });
     } else {
