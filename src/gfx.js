@@ -103,6 +103,25 @@ float swellH(vec2 p) {
   ) * uSwellAmp;
 }
 
+// The curvature of the same swell the surface waves are made of. A dip in
+// the surface is a converging lens, so this is what focuses sunlight into
+// caustics on the floor.
+float swellLap(vec2 p) {
+  float w = swellWarp(p);
+  return (
+    // the long swell sets the big cells and how they wander
+    -0.0014 * sin((p.x * 0.031 + p.y * 0.021) + w * 0.8 + uTime * 0.5464) * 1.5 +
+    -0.0025 * sin((p.y * 0.047 - p.x * 0.017) + w * 0.7 + uTime * 0.8607 + 1.7) * 0.96 +
+    -0.0105 * sin((p.x * 0.083 + p.y * 0.060) + w * 0.5 + uTime * 1.2823 + 4.1) * 0.48 +
+    // capillary ripples. Curvature goes with the square of the wavenumber,
+    // so these tiny fast waves are what etch the fine bright filaments of a
+    // caustic net while the swell moves the net around.
+    -0.26 * sin((p.x * 0.55 + p.y * 0.38) + uTime * 3.4) * 0.42 +
+    -0.28 * sin((p.y * 0.61 - p.x * 0.30) + uTime * 2.7 + 2.3) * 0.38 +
+    -0.40 * sin((p.x * 0.74 - p.y * 0.52) + uTime * 4.1 + 5.1) * 0.30
+  ) * uSwellAmp;
+}
+
 vec2 swellGrad(vec2 p) {
   float d0 = cos((p.x * 0.031 + p.y * 0.021) + uTime * 0.5464) * 0.5;
   float d1 = cos((p.y * 0.047 - p.x * 0.017) + uTime * 0.8607 + 1.7) * 0.32;
@@ -695,15 +714,27 @@ void main() {
   // caustics: two drifting noise fields, bright where their difference is
   // small. The clock steps in whole frames so the light net never crawls
   // through sub-pixel positions and shimmers.
-  float tq = floor(uTime * 7.0) * (1.0 / 7.0);
-  vec2 cq1 = (p + g * 2.0) * 0.046 + vec2(tq * 0.52, -tq * 0.29);
-  vec2 cq2 = (p + g * 2.0) * 0.038 + vec2(-tq * 0.37, tq * 0.58) + 23.7;
-  float cn1 = vnoise(cq1) * 0.68 + vnoise(cq2 * 1.7 + 5.3) * 0.32;
-  float cn2 = vnoise(cq2) * 0.68 + vnoise(cq1 * 1.31 + 9.1) * 0.32;
-  float caust = pow(clamp(1.0 - abs(cn1 - cn2) * 2.1, 0.0, 1.0), 5.0);
-  caust += pow(clamp(1.0 - abs(cn2 - cn1) * 4.5, 0.0, 1.0), 8.0) * 0.4;
+  // Light focused by the wavy surface. Brightness follows the surface
+  // curvature, so the light net drifts with the very waves that make it
+  // instead of crawling on its own clock, and its cells are round and
+  // connected the way real caustics are.
+  // The net itself is the ridge where two slow drifting fields agree. Ridges
+  // form connected curves, which is what makes a caustic read as a net of
+  // light rather than a scatter of dots. The swell curvature then brightens
+  // the net where the surface is actually focusing, so it still pulses with
+  // the waves instead of scrolling on its own.
+  // cell size is kept in pixels, not in world units, so the light net looks
+  // the same whether the pond renders at 320 or 600 pixels across
+  float cs = uRes.x / 320.0;
+  vec2 cq1 = (p + g * 2.0) * 0.034 * cs + vec2(uTime * 0.085, -uTime * 0.062);
+  vec2 cq2 = (p + g * 2.0) * 0.029 * cs - vec2(uTime * 0.07, uTime * 0.098) + 23.7;
+  float cn1 = vnoise(cq1) * 0.7 + vnoise(cq1 * 2.1 + 5.3) * 0.3;
+  float cn2 = vnoise(cq2) * 0.7 + vnoise(cq2 * 1.9 + 9.1) * 0.3;
+  float caust = pow(clamp(1.0 - abs(cn1 - cn2) * 2.5, 0.0, 1.0), 2.8);
+  float lap = swellLap(p + g * 2.0) * 2.2;
+  caust *= 0.45 + 0.95 * clamp(lap * 1.2 + 0.45, 0.0, 1.6);
   caust *= 0.15 + 0.85 * pow(clamp(d * 1.6, 0.0, 1.0), 1.5);
-  floorCol += uSun * caust * uCaustics * 1.1;
+  floorCol += uSun * caust * uCaustics * 2.3;
 
   // slow diagonal shafts of light: one broad, soft band rather than streaks
   float shaft = sin(dot(p, normalize(vec2(-0.55, -0.75))) * 0.0185 + vnoise(p * 0.021) * 3.4 + uTime * 0.07);
@@ -744,7 +775,7 @@ void main() {
   float rimT = clamp(d, 0.0, 1.0);
   float deepAmt = 1.0 - rimT;
   float shallowAmt = smoothstep(0.34, 0.7, rimT);
-  col = mix(col, col * uDeepTint, smoothstep(0.03, 0.4, deepAmt) * 0.64 * mask);
+  col = mix(col, col * uDeepTint, smoothstep(0.03, 0.4, deepAmt) * 0.55 * mask);
   // the shallows keep their water colour instead of reading as bare sand
   col = mix(col, mix(col, uShallowColor, uShallowMix), shallowAmt * mask);
   col += vec3(uShallowLift) * shallowAmt * mask;

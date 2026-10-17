@@ -79,9 +79,11 @@ const CONFIG = {
   // frame, because the ring lives on a timeline instead of a grid.
   ripples: {
     touch: {
-      rings: 3, stagger: 0.09, lifetime: 1.6, startRadius: 3,
-      expandSpeed: 52, distortion: 4.8, sharpness: 0.26,
-      fadeStart: 0.42, decay: 0.30, initialStrength: 1.35,
+      // a leading crest with two weaker followers, and the crest slows as it
+      // travels (radius goes with sqrt of time) the way a real ring does
+      rings: 3, stagger: 0.16, lifetime: 1.9, startRadius: 2,
+      expandSpeed: 34, distortion: 3.6, sharpness: 0.55,
+      fadeStart: 0.46, decay: 0.28, initialStrength: 1.1, falloff: 0.32,
     },
     mouth: {
       rings: 1, stagger: 0, lifetime: 0.9, startRadius: 1.2,
@@ -129,14 +131,14 @@ const CONFIG = {
   bed: {
     // the floor is blue: pale pebbles, blue-grey silt, navy in the deep,
     // and only the weed stays green so the plants still read as plants
-    pebble: [152, 172, 200],
-    sand: [116, 142, 178],
-    mud: [88, 114, 156],
-    deep: [40, 64, 106],
-    algae: [56, 92, 108],
-    bank: [72, 104, 132],
-    bankDark: [48, 74, 100],
-    mudEdge: [104, 122, 148],
+    pebble: [182, 202, 228],
+    sand: [144, 172, 206],
+    mud: [114, 146, 188],
+    deep: [66, 98, 144],
+    algae: [78, 120, 136],
+    bank: [94, 128, 158],
+    bankDark: [64, 94, 122],
+    mudEdge: [130, 152, 180],
   },
 
   caustics: { amp: 0.115 },
@@ -148,8 +150,14 @@ const CONFIG = {
   vignette: 0.24,
 
   shadows: {
-    koiAlpha: [0.14, 0.26], // by depth
-    padAlpha: 0.16,
+    // one light direction for everything: the shadow falls away from the sun
+    dir: [0.54, 0.84],
+    tint: [0.05, 0.10, 0.17], // blue, so shadows sit on the blue floor
+    koiAlpha: [0.12, 0.22], // by depth
+    padAlpha: 0.15,
+    floatAlpha: 0.2,
+    propAlpha: 0.18,
+    bankAlpha: 0.2,
     butterflyAlpha: 0.12,
   },
 

@@ -473,6 +473,14 @@ function handlePointerMove(x, y) {
   }
 }
 
+// the shadow of everything falls away from the sun, at one angle
+function shadowOffset(mag) {
+  const dir = CONFIG.shadows.dir;
+  return [dir[0] * mag, dir[1] * mag];
+}
+
+const SHADOW_TINT = CONFIG.shadows.tint;
+
 function handlePointerUp() {
   const st = Pond.state;
   st.pointer.down = false;
@@ -703,32 +711,36 @@ function drawFrame() {
   // each koi casts its own silhouette on the floor
   for (const k of koiSorted) {
     const a = k.aabb;
-    const off = 1.8 + k.depth * 3.4;
+    const off = 1.9 + k.depth * 3.4;
+    const so = shadowOffset(off);
     const alpha = CONFIG.shadows.koiAlpha[0] + k.depth * (CONFIG.shadows.koiAlpha[1] - CONFIG.shadows.koiAlpha[0]);
     gfx.drawFish({
       canvas: k.canvas, extents: k.extents, spineTex: k.spineTex,
       spineData: k.spineData, spineN: SPINE_NODES,
       spriteW: k.length, spriteH: k.height, vc: k.spineRow / k.height,
       scale: 1,
-      x: (a.minX + a.maxX) / 2 + off * 0.7, y: (a.minY + a.maxY) / 2 + off,
+      x: (a.minX + a.maxX) / 2 + so[0], y: (a.minY + a.maxY) / 2 + so[1],
       w: (a.maxX - a.minX) + 12, h: (a.maxY - a.minY) + 12,
-      offset: [-off * 0.7, -off],
-      tint: [0.05, 0.12, 0.15, alpha * 2.2],
+      offset: [-so[0], -so[1]],
+      tint: [SHADOW_TINT[0], SHADOW_TINT[1], SHADOW_TINT[2], alpha],
       deepTint: 0,
     });
   }
   // pads cast their own shape on the floor
   for (const pad of scenery.pads) {
     const bob = waterBobAt(pad.x, pad.y, time) * 0.6;
-    gfx.drawSprite(pad.tex, pad.x + 2.2, pad.y + 3.2 + bob * 0.4, pad.size * 0.99, pad.size * 0.96, pad.rot, [0.09, 0.17, 0.15, CONFIG.shadows.padAlpha], false);
+    const so = shadowOffset(3.2);
+    gfx.drawSprite(pad.tex, pad.x + so[0], pad.y + so[1] + bob * 0.4, pad.size * 0.99, pad.size * 0.96, pad.rot, [SHADOW_TINT[0], SHADOW_TINT[1], SHADOW_TINT[2], CONFIG.shadows.padAlpha], false);
   }
   for (const we of scenery.duckweed) {
     const bob = waterBobAt(we.x, we.y, time) * 0.5;
-    gfx.drawSprite(blob, we.x + 1, we.y + 1.5 + bob * 0.4, 3, 2.4, 0, [0.08, 0.16, 0.14, 0.14], false);
+    const so = shadowOffset(1.9);
+    gfx.drawSprite(blob, we.x + so[0], we.y + so[1] + bob * 0.4, 3, 2.4, 0, [SHADOW_TINT[0], SHADOW_TINT[1], SHADOW_TINT[2], CONFIG.shadows.floatAlpha * 0.7], false);
   }
   for (const mo of scenery.surfaceMoss) {
     const bob = waterBobAt(mo.x, mo.y, time) * 0.5;
-    gfx.drawSprite(blob, mo.x + 1.2, mo.y + 1.6 + bob * 0.4, mo.size * 0.9, mo.size * 0.62, mo.rot, [0.08, 0.16, 0.14, 0.2], false);
+    const so = shadowOffset(2.4);
+    gfx.drawSprite(blob, mo.x + so[0], mo.y + so[1] + bob * 0.4, mo.size * 0.9, mo.size * 0.62, mo.rot, [SHADOW_TINT[0], SHADOW_TINT[1], SHADOW_TINT[2], CONFIG.shadows.floatAlpha], false);
   }
 
   // koi, deepest first so the shallow ones pass over the top
@@ -765,14 +777,21 @@ function drawFrame() {
     }
   }
 
-  // weed beds on the floor, drawn under the surface so they tint and bend
+  // weed beds on the floor, drawn under the surface so they tint and bend.
+  // Anything sitting on the floor still throws a short shadow where it meets
+  // it, otherwise it reads as floating.
+  const propSo = shadowOffset(1.3);
   for (const w of scenery.weeds) {
+    gfx.drawSprite(w.tex, w.x + propSo[0], w.y + propSo[1], w.w, w.h, w.rot,
+      [SHADOW_TINT[0], SHADOW_TINT[1], SHADOW_TINT[2], CONFIG.shadows.propAlpha], false);
     gfx.drawSprite(w.tex, w.x, w.y, w.w, w.h, w.rot, [0.74, 0.88, 0.84, 0.92], false);
   }
   // mossy stones standing in the shallows (under the surface, so the water
   // pass bends and tints them with everything else)
   for (const s of scenery.shore) {
     if (!s.submerged) continue;
+    gfx.drawSprite(s.tex, s.x + propSo[0], s.y + propSo[1], s.w, s.h, s.rot,
+      [SHADOW_TINT[0], SHADOW_TINT[1], SHADOW_TINT[2], CONFIG.shadows.propAlpha], false);
     gfx.drawSprite(s.tex, s.x, s.y, s.w, s.h, s.rot, [0.86, 0.94, 0.94, 0.95], false);
   }
 
@@ -783,7 +802,8 @@ function drawFrame() {
     gfx.drawSprite(mo.tex, mo.x, mo.y + bob, mo.size, mo.size * 0.8, mo.rot, [0.98, 1.04, 0.96, 1], false);
   }
   for (const bf of Pond.butterflies) {
-    gfx.drawSprite(blob, bf.x + 1.5, bf.y + 2.4, 6, 4, 0, [0.08, 0.15, 0.13, CONFIG.shadows.butterflyAlpha], false);
+    const bso = shadowOffset(2.6);
+    gfx.drawSprite(blob, bf.x + bso[0], bf.y + bso[1], 6, 4, 0, [SHADOW_TINT[0], SHADOW_TINT[1], SHADOW_TINT[2], CONFIG.shadows.butterflyAlpha], false);
     if (world.pond.d(bf.x, bf.y) < 0.94 && !bf.resting) {
       const wobble = waterBobAt(bf.x, bf.y, time) * 0.5;
       gfx.drawSprite(bf.canvas, bf.x, bf.y + 3.2 + wobble, bf.canvas.width, bf.canvas.height, bf.rot, [0.75, 0.85, 0.9, 0.16], true);
@@ -798,6 +818,9 @@ function drawFrame() {
   for (const s of scenery.shore) {
     if (s.submerged) continue;
     const y = s.anchor === "bottom" ? s.y - s.h * 0.5 : s.y;
+    const bso = shadowOffset(1.7);
+    gfx.drawSprite(s.tex, s.x + bso[0], y + bso[1], s.w, s.h, s.rot,
+      [SHADOW_TINT[0], SHADOW_TINT[1], SHADOW_TINT[2], CONFIG.shadows.bankAlpha], false);
     gfx.drawSprite(s.tex, s.x, y, s.w, s.h, s.rot, [1, 1, 1, 1], false);
   }
   for (const pad of scenery.pads) {

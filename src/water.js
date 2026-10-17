@@ -45,7 +45,9 @@ function spawnRipple(kind, x, y, opts) {
       delay: i * profile.stagger,
       startRadius: profile.startRadius * scale,
       expand: profile.expandSpeed * scale * profile.lifetime,
-      strength: profile.initialStrength * scale * ((opts && opts.sign) || 1),
+      // the leading crest is the strongest, the rest die away
+      strength: profile.initialStrength * scale * ((opts && opts.sign) || 1)
+        * Math.pow(1 - (profile.falloff || 0), i),
       sharpness: profile.sharpness,
       profile,
       alive: true,
@@ -76,7 +78,8 @@ function armRing(ring) {
       step: () => {
         const p = clamp(ring.p, 0, 1);
         ring.age = p * ring.profile.lifetime;
-        ring.radius = ring.startRadius + ring.expand * p;
+        // sqrt: a ring runs out of speed as it grows, like water does
+        ring.radius = ring.startRadius + ring.expand * Math.sqrt(p);
         ring.amp = ring.strength * ringFade(p, ring.profile);
       },
       complete: () => {
