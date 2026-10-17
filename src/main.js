@@ -1161,12 +1161,13 @@ function drawFrame() {
     // one pass, drawn together, so nothing can separate them
     gfx.drawSprite(pad.tex, pad.x + so[0], pad.y + so[1] + bob * 0.5, pad.size * 0.99, pad.size * 0.96, pad.rot,
       [SHADOW_TINT[0], SHADOW_TINT[1], SHADOW_TINT[2], CONFIG.shadows.padAlpha], false);
+    // hover and grab read as light, never as size: a pad is always exactly
+    // pad.size, it just catches more sun when your pointer is on it
     const hovered = Pond.state.hoverPad === pad;
-    const s = pad.shade * (hovered ? 1.12 : 1);
-    const lift = (pad.lift || 0) + (hovered ? 0.45 : 0);
-    const scale = 1 + lift * 0.09;
-    gfx.drawSprite(pad.tex, pad.x, pad.y + bob - lift * 1.5, pad.size * scale, pad.size * scale, pad.rot, [s, s, s, 1], false);
-    pad.lift = lift > 0 ? Math.max(0, lift - 0.055) : 0;
+    const held = Pond.state.dragPad === pad;
+    const glow = (hovered ? 0.5 : 0) + (held ? 0.5 : 0);
+    const s = pad.shade * (1 + glow * 0.22);
+    gfx.drawSprite(pad.tex, pad.x, pad.y + bob, pad.size, pad.size, pad.rot, [s, s, s, 1], false);
   }
   for (const f of scenery.padFlowers) {
     const bob = waterBobAt(f.pad.x, f.pad.y, time) * 0.6;
