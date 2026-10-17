@@ -216,6 +216,7 @@ function boot() {
         x: +k.x.toFixed(1), y: +k.y.toFixed(1), d: +k.depth.toFixed(2),
         v: +k.speed.toFixed(2), state: k.state, variety: k.variety,
       })),
+    padIndexOf: (pad) => padIndexOf(pad),
     selectedPad: () => (Pond.state.selPad
       ? { x: +Pond.state.selPad.x.toFixed(1), y: +Pond.state.selPad.y.toFixed(1), r: Pond.state.selPad.r }
       : null),
@@ -455,26 +456,15 @@ function findPadAt(x, y, slack) {
   for (const pad of pads) {
     const py = pad.y + padBobAt(pad, Pond.world.time);
     const d = Math.hypot(pad.x - x, py - y);
-    // a lily pad outranks a moss mat within eight pixels of the same spot: when
-    // a mat drifts under a pad it used to steal the grab, and then the mat
-    // moved while the pad you aimed at sat still
-    const score = d - 8;
-    if (d < pad.r * reach + 4 && score < bestD) {
+    // one rule: your pointer is on the pad's own disc (plus three pixels of
+    // tolerance). No shadow offset, no scaled reach, nothing else can win.
+    if (d <= pad.r + 3 && d < bestD) {
       best = pad;
-      bestD = score;
-    }
-  }
-  // the green mats floating on the surface look like small pads, so they grab
-  // like pads: anything that reads as a pad should move when it is pulled
-  for (const mo of Pond.scenery.surfaceMoss) {
-    const my = mo.y + clamp(waterBobAt(mo.x, mo.y, Pond.world.time) * 0.5, -1, 1);
-    const d = Math.hypot(mo.x - x, my - y);
-    if (d < mo.size * 0.45 * reach + 4 && d < bestD) {
-      best = mo;
       bestD = d;
     }
-    // mats keep their score as plain distance, so a pad wins the near ties
   }
+  // moss mats are scenery: they drift, they get pushed by the water, and
+  // they are never grabbable, so a mat can never steal a pad's grab again
   return best;
 }
 
@@ -987,7 +977,7 @@ function installInput(canvas) {
     }
     probeTrace("down", ev.clientX, ev.clientY, st.dragPad
       ? { hit: "pad " + padIndexOf(st.dragPad), grabDistance: +Math.hypot(st.dragPad.x - p.x, st.dragPad.y - p.y).toFixed(1) }
-      : (st.hoverPad ? { hit: "moss mat or other floater" } : { hit: "water" }));
+      : { hit: "water" });
     probeClick(st.dragPad ? "grab" : "water", ev.clientX, ev.clientY, p.x, p.y,
       st.dragPad ? { grabbed: [+st.dragPad.x.toFixed(1), +st.dragPad.y.toFixed(1)] } : {});
     if (st.dragPad) probeDragStart(ev.clientX, ev.clientY, p.x, p.y, st.dragPad);
