@@ -109,7 +109,7 @@ const CONFIG = {
     specular: 0.16,
     deepTint: [0.60, 0.80, 0.84], // multiplied into deep water
     shallowLift: 0.03,
-    shallowColor: [0.62, 0.80, 0.74], // the shallows keep a water hue
+    shallowColor: [0.58, 0.78, 0.86], // the shallows keep a water hue
     shallowMix: 0.28,
   },
 
@@ -127,14 +127,16 @@ const CONFIG = {
   },
 
   bed: {
-    sand: [176, 162, 130],
-    mud: [120, 128, 92],
-    deep: [26, 60, 58],
-    algae: [58, 92, 58],
-    pebble: [148, 140, 122],
-    bank: [96, 132, 62],
-    bankDark: [64, 94, 46],
-    mudEdge: [128, 116, 88],
+    // the floor is blue: pale pebbles, blue-grey silt, navy in the deep,
+    // and only the weed stays green so the plants still read as plants
+    pebble: [152, 172, 200],
+    sand: [116, 142, 178],
+    mud: [88, 114, 156],
+    deep: [40, 64, 106],
+    algae: [56, 92, 108],
+    bank: [72, 104, 132],
+    bankDark: [48, 74, 100],
+    mudEdge: [104, 122, 148],
   },
 
   caustics: { amp: 0.115 },
