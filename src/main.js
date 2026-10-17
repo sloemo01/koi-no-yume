@@ -867,9 +867,11 @@ function installInput(canvas) {
     if (st.dragPad) probeDragStart(ev.clientX, ev.clientY, p.x, p.y, st.dragPad);
   });
   $(window).on("pointermove", (ev) => {
-    // a held pad is the authority, not the pointer-down flag: a cancelled or
-    // lost pointer used to leave a grabbed pad frozen and then the water
-    // pushed it about, which reads as the pad fighting your hand
+    // where the real pointer actually is, so a pad can light up under it. With
+    // a big cursor-following pet on screen this is the only honest readout of
+    // your pointer position.
+    const hp = pointerPos(canvas, ev.clientX, ev.clientY);
+    st.hoverPad = st.dragPad || findPadAt(hp.x, hp.y, 1.0);
     if (!st.pointer.down && !st.dragPad) return;
     const p = pointerPos(canvas, ev.clientX, ev.clientY);
     st.pointerCss = [Math.round(ev.clientX), Math.round(ev.clientY)];
@@ -1159,8 +1161,9 @@ function drawFrame() {
     // one pass, drawn together, so nothing can separate them
     gfx.drawSprite(pad.tex, pad.x + so[0], pad.y + so[1] + bob * 0.5, pad.size * 0.99, pad.size * 0.96, pad.rot,
       [SHADOW_TINT[0], SHADOW_TINT[1], SHADOW_TINT[2], CONFIG.shadows.padAlpha], false);
-    const s = pad.shade;
-    const lift = pad.lift || 0;
+    const hovered = Pond.state.hoverPad === pad;
+    const s = pad.shade * (hovered ? 1.12 : 1);
+    const lift = (pad.lift || 0) + (hovered ? 0.45 : 0);
     const scale = 1 + lift * 0.09;
     gfx.drawSprite(pad.tex, pad.x, pad.y + bob - lift * 1.5, pad.size * scale, pad.size * scale, pad.rot, [s, s, s, 1], false);
     pad.lift = lift > 0 ? Math.max(0, lift - 0.055) : 0;
