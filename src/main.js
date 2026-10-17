@@ -485,8 +485,16 @@ function handlePointerMove(x, y) {
   st.pointer.y = y;
   if (st.dragPad) {
     const pad = st.dragPad;
-    const nx = clamp(x + pad.grabX, 4, world.res.x - 4);
-    const ny = clamp(y + pad.grabY, 4, world.res.y - 4);
+    const px = st.pixelSize;
+    const css = st.pointerCss || [x * px, y * px];
+    if (!pad.grabScreen) {
+      pad.grabScreen = [pad.x * px, pad.y * px];
+      st.grabCssAt = css;
+    }
+    const nx = clamp((pad.grabScreen[0] + (css[0] - st.grabCssAt[0])) / px, 4, world.res.x - 4);
+    const ny = clamp((pad.grabScreen[1] + (css[1] - st.grabCssAt[1])) / px, 4, world.res.y - 4);
+    pad.grabX = pad.x - x;
+    pad.grabY = pad.y - y;
     probeDragSample(st.pointerCss ? st.pointerCss[0] : pad.x, st.pointerCss ? st.pointerCss[1] : pad.y, x, y, pad);
     const moved = Math.hypot(nx - pad.x, ny - pad.y);
     pad.x = nx;
@@ -508,6 +516,8 @@ function handlePointerMove(x, y) {
     under.held = true;
     under.grabX = under.x - x;
     under.grabY = under.y - y;
+    under.grabScreen = [under.x * st.pixelSize, under.y * st.pixelSize];
+    st.grabCssAt = st.pointerCss || [x * st.pixelSize, y * st.pixelSize];
     st.dragPad = under;
     probeDragStart(st.pointerCss ? st.pointerCss[0] : x, st.pointerCss ? st.pointerCss[1] : y, x, y, under);
     return;
@@ -554,6 +564,8 @@ function handlePointerUp() {
     pad.driftY = 0;
     pad.vx = 0;
     pad.vy = 0;
+    pad.grabScreen = null;
+    st.grabCssAt = null;
     // letting go nudges the water once
     spawnRipple("splash", pad.x, pad.y, { scale: 0.9 });
     Sound.plop(0.5);
@@ -827,6 +839,13 @@ function installInput(canvas) {
       return;
     }
     handlePointerDown(p.x, p.y);
+    if (st.dragPad) {
+      // anchor the drag in screen space: where the pad is on screen and where
+      // the cursor is. From here the pad moves by the cursor's screen delta,
+      // so no world-space convention can turn the movement against your hand.
+      st.dragPad.grabScreen = [st.dragPad.x * st.pixelSize, st.dragPad.y * st.pixelSize];
+      st.grabCssAt = [ev.clientX, ev.clientY];
+    }
     probeClick(st.dragPad ? "grab" : "water", ev.clientX, ev.clientY, p.x, p.y,
       st.dragPad ? { grabbed: [+st.dragPad.x.toFixed(1), +st.dragPad.y.toFixed(1)] } : {});
     if (st.dragPad) probeDragStart(ev.clientX, ev.clientY, p.x, p.y, st.dragPad);
