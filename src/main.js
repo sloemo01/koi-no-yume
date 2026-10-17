@@ -348,10 +348,7 @@ function pointerPos(canvas, x, y) {
   const rect = canvas.getBoundingClientRect();
   return {
     x: ((x - rect.left) / rect.width) * canvas.width,
-    // The scene is drawn the way a framebuffer stores it, with y climbing from
-    // the bottom, so screen y has to flip on the way into world space. Without
-    // this a click at the bottom of the pond ripples at the top of it.
-    y: canvas.height - ((y - rect.top) / rect.height) * canvas.height,
+    y: ((y - rect.top) / rect.height) * canvas.height,
   };
 }
 
@@ -655,8 +652,7 @@ function probeRipple(kind, x, y, n) {
     // the click that caused this ripple should be the one right before it
     const mismatch = !!(last && last.kind === "water"
       && Math.hypot(last.world[0] - x, last.world[1] - y) > 2);
-    const cssY = (Pond.world.res.y - y) * px;
-    probeMark(x * px, cssY, mismatch ? "rgba(255,90,90,.95)" : "rgba(140,255,170,.9)");
+    probeMark(x * px, y * px, mismatch ? "rgba(255,90,90,.95)" : "rgba(140,255,170,.9)");
   }
   return rec;
 }

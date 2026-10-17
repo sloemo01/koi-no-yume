@@ -692,7 +692,11 @@ in vec2 vUV;
 out vec4 outColor;
 
 void main() {
-  vec2 p = vUV * uRes;
+  // vUV starts at the bottom of the frame buffer, but every world position in
+  // this project (rings, fish, pads, clouds) counts y down from the top. Flip
+  // here or the water features come out mirrored against everything drawn as
+  // a sprite, which is what put ripples on the wrong side of a click.
+  vec2 p = vec2(vUV.x, 1.0 - vUV.y) * uRes;
   float d = pondD(p);
   vec2 g = ringDisp(p) * 1.4 + swellGrad(p) * 6.0;
 
@@ -779,7 +783,11 @@ in vec2 vUV;
 out vec4 outColor;
 
 void main() {
-  vec2 p = vUV * uRes;
+  // vUV starts at the bottom of the frame buffer, but every world position in
+  // this project (rings, fish, pads, clouds) counts y down from the top. Flip
+  // here or the water features come out mirrored against everything drawn as
+  // a sprite, which is what put ripples on the wrong side of a click.
+  vec2 p = vec2(vUV.x, 1.0 - vUV.y) * uRes;
   float d = pondD(p);
   float mask = 1.0 - smoothstep(0.965, 1.03, d);
 
@@ -916,7 +924,11 @@ float cloudShade(vec4 cloud, vec2 p) {
 
 void main() {
   vec3 col = texture(uScene, vUV).rgb + texture(uBloom, vUV).rgb * uStrength;
-  vec2 p = vUV * uRes;
+  // vUV starts at the bottom of the frame buffer, but every world position in
+  // this project (rings, fish, pads, clouds) counts y down from the top. Flip
+  // here or the water features come out mirrored against everything drawn as
+  // a sprite, which is what put ripples on the wrong side of a click.
+  vec2 p = vec2(vUV.x, 1.0 - vUV.y) * uRes;
   float shade = cloudShade(uCloudA, p) + cloudShade(uCloudB, p);
   col *= 1.0 - clamp(shade, 0.0, 0.5);
   col *= uWarm;
