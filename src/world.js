@@ -25,8 +25,10 @@ function buildScenery(rand, res, pond) {
     const count = rand.int(P.perCluster[0], P.perCluster[1]);
     for (let i = 0; i < count; i++) {
       const size = Math.round(rand.range(P.size[0], P.size[1]));
-      const x = center.x + rand.range(-16, 16);
-      const y = center.y + rand.range(-13, 13);
+      // keep the whole pad inside the frame, not half off the bottom edge
+      const edge = size * 0.5 + 3;
+      const x = clamp(center.x + rand.range(-16, 16), edge, res.x - edge);
+      const y = clamp(center.y + rand.range(-13, 13), edge, res.y - edge);
       if (pond.d(x, y) > 0.8) continue;
       const pad = {
         x, y, size,
@@ -187,12 +189,15 @@ function buildScenery(rand, res, pond) {
     const mats = rand.int(1, 3);
     for (let i = 0; i < mats; i++) {
       const size = rand.range(CONFIG.surfaceMoss.size[0], CONFIG.surfaceMoss.size[1]);
+      const mx = clamp(p.x + rand.range(-9, 9), size * 0.6 + 3, res.x - size * 0.6 - 3);
+      const my = clamp(p.y + rand.range(-7, 7), size * 0.5 + 3, res.y - size * 0.5 - 3);
       surfaceMoss.push({
         tex: rand.pick(surfaceMossTexs),
-        x: clamp(p.x + rand.range(-9, 9), 6, res.x - 6),
-        y: clamp(p.y + rand.range(-7, 7), 6, res.y - 6),
-        size,
+        x: mx, y: my, size,
         rot: rand.range(0, Math.PI * 2),
+        homeX: mx,
+        homeY: my,
+        held: false,
         vx: 0,
         vy: 0,
       });
@@ -226,6 +231,7 @@ function updatePads(dt, time, pads, pond) {
 // floaters just drift and bob; rate lets the heavy moss mats move slower
 function updateDuckweed(dt, time, weed, pond, rate) {
   for (const w of weed) {
+    if (w.held) continue;
     const k = rate === undefined ? 1 : rate;
     const push = waterPushAt(w.x, w.y, dt);
     w.vx += push.x * 1.6 * k;

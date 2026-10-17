@@ -82,7 +82,7 @@ const CONFIG = {
       // a leading crest with two weaker followers, and the crest slows as it
       // travels (radius goes with sqrt of time) the way a real ring does
       rings: 3, stagger: 0.16, lifetime: 1.9, startRadius: 2,
-      expandSpeed: 34, distortion: 3.6, sharpness: 0.55,
+      expandSpeed: 34, distortion: 5.2, sharpness: 0.42,
       fadeStart: 0.46, decay: 0.28, initialStrength: 1.1, falloff: 0.32,
     },
     mouth: {

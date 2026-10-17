@@ -68,7 +68,9 @@ float ringCrest(vec2 p, float offsetPx) {
     vec4 r = uRings[i];
     float dist = max(length(p - r.xy), 0.0001);
     float sd = dist - r.z - offsetPx;
-    acc += exp(-abs(sd) * uRingK[i]) * r.w;
+    // 2.8x the ring's own falloff: the crest has to read as a line you can
+    // see, not as a broad lift on the whole neighbourhood
+    acc += exp(-abs(sd) * uRingK[i] * 2.8) * r.w;
   }
   return acc;
 }
@@ -787,7 +789,7 @@ void main() {
   // sub-pixel and dithered per pixel, so the water looks alive without bands.
   float jt = floor(uTime * 7.0) * (1.0 / 7.0);
   vec2 jitter = (vec2(vnoise(p * 0.29 + jt), vnoise(p * 0.31 + 17.0 - jt)) - 0.5) * 1.25;
-  vec2 disp = (ringDisp(p) * uBend + swellGrad(p) * 6.0 + jitter) * mask;
+  vec2 disp = (ringDisp(p) * uBend * 0.6 + swellGrad(p) * 6.0 + jitter) * mask;
   disp = clamp(disp, vec2(-uMaxBend), vec2(uMaxBend));
   disp = floor(disp + 0.5);                       // whole pixels only
   vec3 col = texture(uUnder, vUV + disp / uRes).rgb;
@@ -855,8 +857,8 @@ void main() {
   // made clicks look like grooves cut into the water.
   float crest = clamp(ringCrest(p, 0.0), 0.0, 1.4);
   float crestShadow = clamp(ringCrest(p, 2.4), 0.0, 1.2);
-  col += uSun * crest * 0.115 * mask;
-  col *= 1.0 - crestShadow * 0.085 * mask;
+  col += uSun * crest * 0.24 * mask;
+  col *= 1.0 - crestShadow * 0.16 * mask;
   vec2 crestNormal = normalize(disp + vec2(1e-5, 1e-5));
   col += uSun * crest * max(dot(crestNormal, normalize(uLight)), 0.0) * uSpecular * 0.9 * mask;
 

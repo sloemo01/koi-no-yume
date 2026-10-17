@@ -216,6 +216,10 @@ function boot() {
         x: +k.x.toFixed(1), y: +k.y.toFixed(1), d: +k.depth.toFixed(2),
         v: +k.speed.toFixed(2), state: k.state, variety: k.variety,
       })),
+    moss: () =>
+      Pond.scenery.surfaceMoss.map((m) => ({
+        x: +m.x.toFixed(1), y: +m.y.toFixed(1), size: +m.size.toFixed(1), held: !!m.held,
+      })),
     pads: () =>
       Pond.scenery.pads.map((p) => ({
         x: +p.x.toFixed(1), y: +p.y.toFixed(1), r: p.r, held: p.held,
@@ -413,6 +417,15 @@ function findPadAt(x, y) {
       bestD = d;
     }
   }
+  // the green mats floating on the surface look like small pads, so they grab
+  // like pads: anything that reads as a pad should move when it is pulled
+  for (const mo of Pond.scenery.surfaceMoss) {
+    const d = Math.hypot(mo.x - x, mo.y - y);
+    if (d < mo.size * 0.45 && d < bestD) {
+      best = mo;
+      bestD = d;
+    }
+  }
   return best;
 }
 
@@ -493,6 +506,8 @@ function handlePointerUp() {
     pad.homeY = clamp(pad.y, 8, Pond.world.res.y - 8);
     pad.driftX = 0;
     pad.driftY = 0;
+    pad.vx = 0;
+    pad.vy = 0;
     // letting go nudges the water once
     spawnRipple("splash", pad.x, pad.y, { scale: 0.9 });
     Sound.plop(0.5);
