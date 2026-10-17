@@ -216,6 +216,16 @@ function boot() {
         x: +k.x.toFixed(1), y: +k.y.toFixed(1), d: +k.depth.toFixed(2),
         v: +k.speed.toFixed(2), state: k.state, variety: k.variety,
       })),
+    probes: () => probeReport(),
+    clearProbes: () => probeClear(),
+    probeToggle: () => {
+      PROBE.on = !PROBE.on;
+      return PROBE.on;
+    },
+    probeMarkers: (on) => {
+      PROBE.on = on === undefined ? !PROBE.on : !!on;
+      return PROBE.on;
+    },
     moss: () =>
       Pond.scenery.surfaceMoss.map((m) => ({
         x: +m.x.toFixed(1), y: +m.y.toFixed(1), size: +m.size.toFixed(1), held: !!m.held,
@@ -525,6 +535,11 @@ function setPixelSize(p) {
   fit(false);
 }
 
+Pond.__probeToggle = () => {
+  PROBE.on = !PROBE.on;
+  return PROBE.on;
+};
+
 function handleKey(key) {
   const st = Pond.state;
   if (key === " ") {
@@ -540,6 +555,7 @@ function handleKey(key) {
     st.showSpines = !st.showSpines;
     return true;
   }
+  if (key === "p") return Pond.__probeToggle();
   if (key === "h") {
     st.hidden = !st.hidden;
     $(".hud").toggleClass("hidden", st.hidden);
@@ -560,6 +576,142 @@ function handleKey(key) {
   return false;
 }
 
+// ---------------------------------------------------------------- probes
+// Every click is recorded with both the screen position and the backing
+// position it resolved to, and every ripple is tracked to see whether it
+// actually advances and where it lands. window.__pond.probes.report() reads
+// the lot back. Markers on screen show a click and where its ripple went:
+// cyan where you clicked, green where the ripple landed, red if they differ.
+const PROBE = {
+  on: true,
+  max: 240,
+  clicks: [],
+  ripples: [],
+  stuck: [],
+  mismatches: [],
+  watch: [],
+  counters: { clicks: 0, ripples: 0, grabbed: 0, fed: 0, water: 0, mismatch: 0, stuck: 0 },
+};
+PROBE.noteRipple = probeRipple;
+window.__probes = PROBE;
+
+function probePush(list, rec) {
+  list.push(rec);
+  if (list.length > PROBE.max) list.splice(0, list.length - PROBE.max);
+}
+
+function probeMark(cssX, cssY, color) {
+  const d = document.createElement("div");
+  d.className = "probe-mark";
+  d.style.cssText = "position:fixed;pointer-events:none;z-index:60;border-radius:50%;"
+    + "left:" + (cssX - 10) + "px;top:" + (cssY - 10) + "px;width:20px;height:20px;"
+    + "border:1px solid " + color + ";opacity:1;transition:opacity .6s linear";
+  document.body.appendChild(d);
+  window.setTimeout(() => { d.style.opacity = "0"; }, 700);
+  window.setTimeout(() => d.remove(), 1500);
+}
+
+function probeClick(kind, cssX, cssY, worldX, worldY, extra) {
+  const rec = {
+    t: +Pond.world.time.toFixed(2),
+    kind,
+    css: [Math.round(cssX), Math.round(cssY)],
+    world: [+worldX.toFixed(1), +worldY.toFixed(1)],
+    ...extra,
+  };
+  probePush(PROBE.clicks, rec);
+  PROBE.counters.clicks++;
+  PROBE.counters[kind] = (PROBE.counters[kind] || 0) + 1;
+  if (PROBE.on) probeMark(cssX, cssY, "rgba(90,210,255,.85)");
+  return rec;
+}
+
+// called by the ripple system for every ripple it spawns
+function probeRipple(kind, x, y, n) {
+  const rec = {
+    t: +Pond.world.time.toFixed(2),
+    kind,
+    world: [+x.toFixed(1), +y.toFixed(1)],
+    n,
+    maxRadius: 0,
+    maxP: 0,
+    advancing: false,
+    done: false,
+    stuck: false,
+  };
+  probePush(PROBE.ripples, rec);
+  PROBE.counters.ripples++;
+  PROBE.watch.push(rec);
+  if (PROBE.watch.length > 24) PROBE.watch.shift();
+  if (PROBE.on && (kind === "touch" || kind === "splash")) {
+    const last = PROBE.clicks[PROBE.clicks.length - 1];
+    const px = Pond.state.pixelSize;
+    // the click that caused this ripple should be the one right before it
+    const mismatch = !!(last && last.kind === "water"
+      && Math.hypot(last.world[0] - x, last.world[1] - y) > 2);
+    probeMark(x * px, y * px, mismatch ? "rgba(255,90,90,.95)" : "rgba(140,255,170,.9)");
+  }
+  return rec;
+}
+
+// a ripple whose progress stops dead is a stalled jQuery job, not a slow wave
+function probeTick() {
+  if (!PROBE.watch.length) return;
+  for (const rec of PROBE.watch) {
+    if (rec.done) continue;
+    const live = WATER_FIELD.rings.filter((r) => r.spawnRec === rec);
+    if (!live.length) {
+      rec.done = true;
+      continue;
+    }
+    let p = 0;
+    for (const r of live) {
+      if (r.p > p) p = r.p;
+      if (r.radius > rec.maxRadius) rec.maxRadius = +r.radius.toFixed(1);
+    }
+    rec.advancing = p > rec.maxP + 0.0005;
+    rec.maxP = Math.max(rec.maxP, p);
+    if (!rec.advancing && Pond.world.time - rec.t > 0.45 && !rec.stuck) {
+      rec.stuck = true;
+      PROBE.counters.stuck++;
+      probePush(PROBE.stuck, { kind: rec.kind, world: rec.world, at: rec.t });
+    }
+  }
+}
+
+function probeMismatch(kind, x, y) {
+  const last = PROBE.clicks[PROBE.clicks.length - 1];
+  if (!last || last.kind !== "water") return;
+  const d = Math.hypot(last.world[0] - x, last.world[1] - y);
+  if (d > 2) {
+    PROBE.counters.mismatch++;
+    probePush(PROBE.mismatches, { kind, click: last.world, ripple: [+x.toFixed(1), +y.toFixed(1)], d: +d.toFixed(1) });
+  }
+}
+
+function probeReport() {
+  const tail = (arr, n) => arr.slice(-n);
+  return {
+    counters: { ...PROBE.counters },
+    markers: PROBE.on,
+    lastClicks: tail(PROBE.clicks, 8),
+    lastRipples: tail(PROBE.ripples, 8).map((r) => ({
+      kind: r.kind, world: r.world, n: r.n, maxRadius: r.maxRadius, advanced: r.advancing, stuck: r.stuck,
+    })),
+    mismatches: tail(PROBE.mismatches, 8),
+    stuck: tail(PROBE.stuck, 8),
+  };
+}
+
+function probeClear() {
+  PROBE.clicks.length = 0;
+  PROBE.ripples.length = 0;
+  PROBE.stuck.length = 0;
+  PROBE.mismatches.length = 0;
+  PROBE.watch.length = 0;
+  PROBE.counters = { clicks: 0, ripples: 0, grabbed: 0, fed: 0, water: 0, mismatch: 0, stuck: 0 };
+}
+
 function installInput(canvas) {
   const st = Pond.state;
 
@@ -567,16 +719,25 @@ function installInput(canvas) {
     const p = pointerPos(canvas, ev.clientX, ev.clientY);
     if (ev.shiftKey) {
       feed(p.x, p.y);
+      probeClick("feed", ev.clientX, ev.clientY, p.x, p.y, {});
       return;
     }
     handlePointerDown(p.x, p.y);
+    probeClick(st.dragPad ? "grab" : "water", ev.clientX, ev.clientY, p.x, p.y,
+      st.dragPad ? { grabbed: [+st.dragPad.x.toFixed(1), +st.dragPad.y.toFixed(1)] } : {});
   });
   $(window).on("pointermove", (ev) => {
     if (!st.pointer.down) return;
     const p = pointerPos(canvas, ev.clientX, ev.clientY);
     handlePointerMove(p.x, p.y);
   });
-  $(window).on("pointerup pointercancel blur", () => handlePointerUp());
+  $(window).on("pointerup pointercancel blur", (ev) => {
+    const last = PROBE.clicks[PROBE.clicks.length - 1];
+    if (last && ev && ev.clientX !== undefined && !last.up) {
+      last.up = [+(ev.clientX / Pond.state.pixelSize).toFixed(1), +(ev.clientY / Pond.state.pixelSize).toFixed(1)];
+    }
+    handlePointerUp();
+  });
 
   $(document).on("keydown", (ev) => {
     if (handleKey(ev.key)) ev.preventDefault();
@@ -869,6 +1030,7 @@ function drawFrame() {
     gfx.drawSprite(Pond.crumbCanvas(), pellet.x, pellet.y + bob, 3, 3, 0, [1, 1, 1, 1], false);
   }
   if (Pond.state.showSpines) gfx.drawSpinesDebug(world);
+  probeTick();
 
   gfx.present(world);
 }

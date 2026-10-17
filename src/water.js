@@ -29,6 +29,7 @@ function spawnRipple(kind, x, y, opts) {
   if (WATER_FIELD.suppress) return null;
   const profile = waterProfile(kind);
   const rings = (opts && opts.rings) || profile.rings;
+  const probe = window.__probes ? window.__probes.noteRipple(kind, x, y, rings) : null;
   const scale = (opts && opts.scale) || 1;
   for (let i = 0; i < rings; i++) {
     if (WATER_FIELD.rings.length >= CONFIG.ripples.maxActive) {
@@ -58,6 +59,7 @@ function spawnRipple(kind, x, y, opts) {
     };
     ring.radius = ring.startRadius;
     ring.amp = 0;
+    ring.spawnRec = probe;
     WATER_FIELD.rings.push(ring);
     WATER_FIELD.spawned++;
     armRing(ring);
