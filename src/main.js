@@ -1008,6 +1008,26 @@ function installInput(canvas) {
     markPointer(ev.clientX, ev.clientY);
     const hp = pointerPos(canvas, ev.clientX, ev.clientY);
     st.hoverPad = st.dragPad || findPadAt(hp.x, hp.y, 1.0);
+    // if the button is down but this page never saw a press, something above
+    // the page ate it. Sweep onto a pad with the button held and you take it.
+    if (!st.dragPad && !st.pointer.down && ev.buttons === 1) {
+      const sweep = findPadAt(hp.x, hp.y, 1.0);
+      if (sweep) {
+        st.dragPad = sweep;
+        sweep.held = true;
+        st.lastDragCss = [Math.round(ev.clientX), Math.round(ev.clientY)];
+        probeDragStart(ev.clientX, ev.clientY, hp.x, hp.y, sweep);
+        probeTrace("sweep grab", ev.clientX, ev.clientY, { pad: padIndexOf(sweep) });
+        Sound.plop(0.3);
+      }
+    }
+    // and if the button came up somewhere this page could not see, let go
+    if (st.dragPad && ev.buttons === 0) {
+      if (st.dragPad) padDivergenceCheck(st.dragPad);
+      probeDragEnd();
+      handlePointerUp();
+      return;
+    }
     if (!st.pointer.down && !st.dragPad) return;
     const p = pointerPos(canvas, ev.clientX, ev.clientY);
     st.pointerCss = [Math.round(ev.clientX), Math.round(ev.clientY)];
