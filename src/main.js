@@ -456,9 +456,10 @@ function findPadAt(x, y, slack) {
   for (const pad of pads) {
     const py = pad.y + padBobAt(pad, Pond.world.time);
     const d = Math.hypot(pad.x - x, py - y);
-    // one rule: your pointer is on the pad's own disc (plus three pixels of
-    // tolerance). No shadow offset, no scaled reach, nothing else can win.
-    if (d <= pad.r + 3 && d < bestD) {
+    // the painted blade reaches about 1.75x the physics radius, so the grab
+    // area has to match what you can SEE: hovering or pressing the outer half
+    // of a lily pad used to do nothing at all
+    if (d <= pad.r * 1.75 + 3 && d < bestD) {
       best = pad;
       bestD = d;
     }
