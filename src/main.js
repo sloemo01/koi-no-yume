@@ -486,16 +486,18 @@ function handlePointerMove(x, y) {
   if (st.dragPad) {
     const pad = st.dragPad;
     const px = st.pixelSize;
+    // The pad simply moves by the cursor's own screen delta, step by step.
+    // Nothing is reconstructed from a stored anchor, so there is no arithmetic
+    // left that could send the pad the other way: whatever direction the
+    // cursor travelled on screen is the direction the pad travels.
     const css = st.pointerCss || [x * px, y * px];
-    if (!pad.grabScreen) {
-      pad.grabScreen = [pad.x * px, pad.y * px];
-      st.grabCssAt = css;
-    }
-    const nx = clamp((pad.grabScreen[0] + (css[0] - st.grabCssAt[0])) / px, 4, world.res.x - 4);
-    const ny = clamp((pad.grabScreen[1] + (css[1] - st.grabCssAt[1])) / px, 4, world.res.y - 4);
+    const last = st.lastDragCss || css;
+    const nx = clamp(pad.x + (css[0] - last[0]) / px, 4, world.res.x - 4);
+    const ny = clamp(pad.y + (css[1] - last[1]) / px, 4, world.res.y - 4);
     pad.grabX = pad.x - x;
     pad.grabY = pad.y - y;
-    probeDragSample(st.pointerCss ? st.pointerCss[0] : pad.x, st.pointerCss ? st.pointerCss[1] : pad.y, x, y, pad);
+    st.lastDragCss = [css[0], css[1]];
+    probeDragSample(css[0], css[1], x, y, pad);
     const moved = Math.hypot(nx - pad.x, ny - pad.y);
     pad.x = nx;
     pad.y = ny;
@@ -850,8 +852,7 @@ function installInput(canvas) {
       // anchor the drag in screen space: where the pad is on screen and where
       // the cursor is. From here the pad moves by the cursor's screen delta,
       // so no world-space convention can turn the movement against your hand.
-      st.dragPad.grabScreen = [st.dragPad.x * st.pixelSize, st.dragPad.y * st.pixelSize];
-      st.grabCssAt = [ev.clientX, ev.clientY];
+      st.lastDragCss = [ev.clientX, ev.clientY];
     }
     probeClick(st.dragPad ? "grab" : "water", ev.clientX, ev.clientY, p.x, p.y,
       st.dragPad ? { grabbed: [+st.dragPad.x.toFixed(1), +st.dragPad.y.toFixed(1)] } : {});
