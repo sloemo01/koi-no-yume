@@ -89,6 +89,13 @@ vec2 ringDisp(vec2 p) {
 
 // the ambient swell: three slow crossing waves plus one finer ripple, and
 // their analytic slope. swellH must match swellAt() in water.js.
+// cell site hash for the caustic mosaic
+vec2 causticHash(vec2 p) {
+  vec3 q = fract(vec3(p.xyx) * vec3(0.1031, 0.1030, 0.0973));
+  q += dot(q, q.yzx + 33.33);
+  return fract((q.xx + q.yz) * q.zy);
+}
+
 float swellWarp(vec2 p) {
   return (vnoise(p * 0.0125) - 0.5) * 6.2 + (vnoise(p * 0.043 + 11.0) - 0.5) * 1.8;
 }
@@ -718,23 +725,38 @@ void main() {
   // curvature, so the light net drifts with the very waves that make it
   // instead of crawling on its own clock, and its cells are round and
   // connected the way real caustics are.
-  // The net itself is the ridge where two slow drifting fields agree. Ridges
-  // form connected curves, which is what makes a caustic read as a net of
-  // light rather than a scatter of dots. The swell curvature then brightens
-  // the net where the surface is actually focusing, so it still pulses with
-  // the waves instead of scrolling on its own.
-  // cell size is kept in pixels, not in world units, so the light net looks
-  // the same whether the pond renders at 320 or 600 pixels across
+  // Caustics, the nagomi shape: a mosaic of irregular cells with the light
+  // gathered along the seams between them. Thin pale lines, low contrast, so
+  // it reads as light lying in the water instead of a pattern on the floor.
+  // The cells drift slowly, wobble through a noise warp, and keep a constant
+  // size in pixels rather than in world units.
   float cs = uRes.x / 320.0;
-  vec2 cq1 = (p + g * 2.0) * 0.034 * cs + vec2(uTime * 0.085, -uTime * 0.062);
-  vec2 cq2 = (p + g * 2.0) * 0.029 * cs - vec2(uTime * 0.07, uTime * 0.098) + 23.7;
-  float cn1 = vnoise(cq1) * 0.7 + vnoise(cq1 * 2.1 + 5.3) * 0.3;
-  float cn2 = vnoise(cq2) * 0.7 + vnoise(cq2 * 1.9 + 9.1) * 0.3;
-  float caust = pow(clamp(1.0 - abs(cn1 - cn2) * 2.5, 0.0, 1.0), 2.8);
+  vec2 cq = (p + g * 2.0) * 0.036 * cs;
+  cq += vec2(uTime * 0.035, uTime * 0.022);
+  // a gentle warp only: too much and the seams break into dashes
+  cq += (vec2(vnoise(cq * 0.4 + 3.0), vnoise(cq * 0.4 + 11.0)) - 0.5) * 0.34;
+  vec2 cn = floor(cq);
+  vec2 cf = fract(cq);
+  float d1 = 9.0;
+  float d2 = 9.0;
+  float cellVary = 1.0;
+  for (int j = -1; j <= 1; j++) {
+    for (int i = -1; i <= 1; i++) {
+      vec2 o = causticHash(cn + vec2(float(i), float(j)));
+      vec2 r = vec2(float(i), float(j)) + o - cf;
+      float dd = dot(r, r);
+      if (dd < d1) { d2 = d1; d1 = dd; cellVary = o.x; } else if (dd < d2) { d2 = dd; }
+    }
+  }
+  float edge = sqrt(d2) - sqrt(d1);   // zero along the seam between two cells
+  float caust = pow(1.0 - smoothstep(0.0, 0.075, edge), 1.35);
+  // not every cell's rim lights up the same, or the net looks printed
+  caust *= 0.55 + 0.85 * cellVary;
+  // the swell still decides how bright the seams burn
   float lap = swellLap(p + g * 2.0) * 2.2;
-  caust *= 0.45 + 0.95 * clamp(lap * 1.2 + 0.45, 0.0, 1.6);
+  caust *= 0.55 + 0.75 * clamp(lap * 1.1 + 0.45, 0.0, 1.5);
   caust *= 0.15 + 0.85 * pow(clamp(d * 1.6, 0.0, 1.0), 1.5);
-  floorCol += uSun * caust * uCaustics * 2.3;
+  floorCol += uSun * caust * uCaustics * 1.4;
 
   // slow diagonal shafts of light: one broad, soft band rather than streaks
   float shaft = sin(dot(p, normalize(vec2(-0.55, -0.75))) * 0.0185 + vnoise(p * 0.021) * 3.4 + uTime * 0.07);
