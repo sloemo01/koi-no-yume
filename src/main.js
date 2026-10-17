@@ -455,9 +455,13 @@ function findPadAt(x, y, slack) {
   for (const pad of pads) {
     const py = pad.y + padBobAt(pad, Pond.world.time);
     const d = Math.hypot(pad.x - x, py - y);
-    if (d < pad.r * reach + 4 && d < bestD) {
+    // a lily pad outranks a moss mat within eight pixels of the same spot: when
+    // a mat drifts under a pad it used to steal the grab, and then the mat
+    // moved while the pad you aimed at sat still
+    const score = d - 8;
+    if (d < pad.r * reach + 4 && score < bestD) {
       best = pad;
-      bestD = d;
+      bestD = score;
     }
   }
   // the green mats floating on the surface look like small pads, so they grab
@@ -469,6 +473,7 @@ function findPadAt(x, y, slack) {
       best = mo;
       bestD = d;
     }
+    // mats keep their score as plain distance, so a pad wins the near ties
   }
   return best;
 }
