@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Pond — a pixel koi pond</title>
+<meta name="description" content="A pixel-art koi pond in WebGL. Procedural koi, minnows, butterflies, lily pads, ripples. No sprites on disk, everything painted at runtime." />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%231d4a52'/%3E%3Ccircle cx='11' cy='8' r='4' fill='%23e8e2d4'/%3E%3Ccircle cx='11' cy='7' r='1.6' fill='%23c9401f'/%3E%3C/svg%3E" />
+<style>
+  :root { color-scheme: dark; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #17383f; }
+  body {
+    font-family: "SF Mono", "Menlo", ui-monospace, monospace;
+    -webkit-font-smoothing: none;
+    -webkit-user-select: none; user-select: none;
+    touch-action: none;
+  }
+  #pond {
+    display: block;
+    width: 100%; height: 100%;
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+    cursor: crosshair;
+    touch-action: none;
+  }
+  .hud {
+    position: fixed;
+    color: #e9e3d2;
+    text-shadow: 0 1px 0 rgba(8, 24, 28, 0.85), 0 -1px 0 rgba(8, 24, 28, 0.4);
+    font-size: 11px;
+    line-height: 1.9;
+    letter-spacing: 0.02em;
+    opacity: 0.92;
+    transition: opacity 0.5s ease;
+  }
+  .hud.hidden { opacity: 0; pointer-events: none; }
+  #hint {
+    left: 14px; bottom: 12px;
+  }
+  #hint b { color: #ffd9a0; font-weight: 600; }
+  #hint .row { white-space: nowrap; }
+  #controls {
+    right: 14px; bottom: 12px;
+    text-align: right;
+    display: flex; flex-direction: column; align-items: flex-end; gap: 6px;
+  }
+  @media (max-width: 620px) {
+    .hud { font-size: 10px; line-height: 1.7; }
+    #hint .row.dim { display: none; }
+    #controls { gap: 4px; }
+    button.px { padding: 2px 6px; }
+  }
+  button.px {
+    font: inherit;
+    color: #e9e3d2;
+    background: rgba(12, 34, 39, 0.55);
+    border: 1px solid rgba(233, 227, 210, 0.28);
+    padding: 3px 8px;
+    cursor: pointer;
+    letter-spacing: 0.04em;
+  }
+  button.px:hover { background: rgba(20, 52, 58, 0.75); border-color: rgba(233, 227, 210, 0.5); }
+  button.px.on { background: #e9e3d2; color: #14333a; border-color: #e9e3d2; }
+  #row-px button { padding: 3px 7px; }
+  #err {
+    position: fixed; left: 10px; top: 10px; right: 10px;
+    color: #ffd7c2; background: rgba(70, 16, 10, 0.92);
+    font-size: 11px; padding: 6px 8px; display: none; white-space: pre-wrap;
+    z-index: 9;
+  }
+</style>
+</head>
+<body>
+<canvas id="pond"></canvas>
+
+<div id="hint" class="hud">
+  <div class="row"><b>click</b> the water and the koi come over</div>
+  <div class="row dim"><b>drag</b> a lily pad, or drag across the water to push it around</div>
+  <div class="row dim"><b>shift-click</b> drops food &nbsp;·&nbsp; <b>space</b> scatter &nbsp;·&nbsp; <b>[ ]</b> koi &nbsp;·&nbsp; <b>1 2 3</b> pixels &nbsp;·&nbsp; <b>h</b> hide</div>
+</div>
+
+<div id="controls" class="hud">
+  <div>
+    <button class="px" id="btn-sound" title="sound">sound: off</button>
+  </div>
+  <div id="row-px">
+    <button class="px" data-px="6" title="chunky pixels">1</button>
+    <button class="px on" data-px="4" title="default pixels">2</button>
+    <button class="px" data-px="3" title="fine pixels">3</button>
+  </div>
+  <div>
+    <button class="px" id="btn-koi" title="more koi">koi +</button>
+    <button class="px" id="btn-koi-less" title="fewer koi">koi −</button>
+  </div>
+</div>
+
+<div id="err"></div>
+
+<script>
+  // error trap that survives reloads; the page's own status surface
+  window.__errs = [];
+  function __showErr(msg) {
+    window.__errs.push(String(msg));
+    var el = document.getElementById("err");
+    if (el) { el.style.display = "block"; el.textContent = window.__errs.slice(0, 4).join("\n"); }
+  }
+  window.addEventListener("error", function (e) {
+    __showErr((e.message || "error") + (e.filename ? " @ " + e.filename.split("/").pop() + ":" + e.lineno : ""));
+  });
+  window.addEventListener("unhandledrejection", function (e) {
+    __showErr("promise: " + (e.reason && e.reason.message ? e.reason.message : e.reason));
+  });
+</script>
+<script src="vendor/jquery-3.7.1.min.js"></script>
+<script src="src/util.js"></script>
+<script src="src/config.js"></script>
+<script src="src/textures.js"></script>
+<script src="src/pond.js"></script>
+<script src="src/water.js"></script>
+<script src="src/world.js"></script>
+<script src="src/fish.js"></script>
+<script src="src/butterflies.js"></script>
+<script src="src/gfx.js"></script>
+<script src="src/main.js"></script>
+</body>
+</html>
