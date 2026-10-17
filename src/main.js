@@ -867,12 +867,17 @@ function installInput(canvas) {
     if (st.dragPad) probeDragStart(ev.clientX, ev.clientY, p.x, p.y, st.dragPad);
   });
   $(window).on("pointermove", (ev) => {
-    if (!st.pointer.down) return;
+    // a held pad is the authority, not the pointer-down flag: a cancelled or
+    // lost pointer used to leave a grabbed pad frozen and then the water
+    // pushed it about, which reads as the pad fighting your hand
+    if (!st.pointer.down && !st.dragPad) return;
     const p = pointerPos(canvas, ev.clientX, ev.clientY);
     st.pointerCss = [Math.round(ev.clientX), Math.round(ev.clientY)];
     handlePointerMove(p.x, p.y);
   });
-  $(window).on("pointerup pointercancel", (ev) => {
+  // only a real pointerup ends a drag; a cancel keeps the pad in hand until
+  // the pointer comes back, because a mouse drag can cancel for many reasons
+  $(window).on("pointerup", (ev) => {
     const last = PROBE.clicks[PROBE.clicks.length - 1];
     if (last && ev && ev.clientX !== undefined && !last.up) {
       const up = pointerPos(document.getElementById("pond"), ev.clientX, ev.clientY);
