@@ -375,10 +375,13 @@ function screenToWorld(canvas, ev) {
 function pointerPos(canvas, x, y) {
   const rect = canvas.getBoundingClientRect();
   const res = (Pond.world && Pond.world.res) || { x: canvas.width, y: canvas.height };
-  const k = res.x / rect.width;
+  // Each axis gets its own ratio. The renderer scales y by res.y / viewport
+  // height, and using the x ratio for y was off by 8 percent on a non-square
+  // window, which is about one pad radius at mid screen: presses near a pad's
+  // centre just barely landed, and everything else missed.
   return {
-    x: (x - rect.left) * k,
-    y: (y - rect.top) * k,
+    x: (x - rect.left) * (res.x / rect.width),
+    y: (y - rect.top) * (res.y / rect.height),
   };
 }
 
