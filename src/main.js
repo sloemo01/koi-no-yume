@@ -439,13 +439,13 @@ function feed(x, y) {
 // slack is how forgiving the grab is: 1 is the pad's own disc, more than that
 // reaches past it. Pressing anywhere on a pad, or just off its edge, takes it.
 function findPadAt(x, y, slack) {
-  const reach = slack === undefined ? 1.3 : slack;
+  const reach = slack === undefined ? 2.2 : slack;
   const pads = Pond.scenery.pads;
   let best = null;
   let bestD = 1e9;
   for (const pad of pads) {
     const d = Math.hypot(pad.x - x, pad.y - y);
-    if (d < pad.r * reach + 5 && d < bestD) {
+    if (d < pad.r * reach + 8 && d < bestD) {
       best = pad;
       bestD = d;
     }
@@ -511,7 +511,7 @@ function handlePointerMove(x, y) {
   // a drag is in flight and a pad is under the pointer: take it. If a grab
   // ever gets lost, the pad must not start moving against your hand; instead
   // the pointer keeps hold of whatever pad it is over.
-  const under = findPadAt(x, y, 1.9);
+  const under = findPadAt(x, y, 3.0);
   if (under) {
     under.held = true;
     under.grabX = under.x - x;
