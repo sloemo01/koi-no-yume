@@ -105,10 +105,12 @@ const TEXTURES = (() => {
 
   // ---------------------------------------------------------------- koi
 
-  // half-width of the body at t along the body (0 nose .. 1 tail root)
+  // Half-width of the body at t along it (0 = snout, 1 = tail root). Blunt
+  // snout, widest just behind the head, then one steady taper. At this size
+  // the profile is what separates a fish from a sausage.
   const KOI_BODY_PROFILE = [
-    [0, 0.30], [0.07, 0.78], [0.17, 0.95], [0.34, 1.0],
-    [0.56, 0.9], [0.74, 0.7], [0.88, 0.48], [1, 0.3],
+    [0, 0.44], [0.06, 0.82], [0.16, 0.97], [0.34, 1.0],
+    [0.56, 0.93], [0.74, 0.74], [0.88, 0.5], [1, 0.3],
   ];
 
   function bodyHalfAt(t) {
@@ -123,205 +125,349 @@ const TEXTURES = (() => {
     return KOI_BODY_PROFILE[KOI_BODY_PROFILE.length - 1][1];
   }
 
-  const KOI_VARIETIES = {
-    kohaku: { base: ["#f7f2e6", "#efe7d5"], marks: [{ colors: ["#d8401f", "#c23318", "#e2542a"], n: [2, 4], saddle: true, cover: 0.55 }] },
-    sanke: { base: ["#f7f2e6", "#efe7d5"], marks: [
-      { colors: ["#d8401f", "#cf3d1e"], n: [2, 3], saddle: true, cover: 0.45 },
-      { colors: ["#191922", "#232331"], n: [3, 5], speckle: true, cover: 0.16 },
-    ] },
-    showa: { base: ["#1b1b24", "#15151d"], marks: [
-      { colors: ["#d8401f", "#c93a1c"], n: [2, 3], saddle: true, cover: 0.4 },
-      { colors: ["#f4efe4", "#efe9db"], n: [2, 3], saddle: true, cover: 0.35 },
-    ] },
-    utsuri: { base: ["#1b1b24", "#141419"], marks: [{ colors: ["#f4efe4", "#eee8d8"], n: [2, 3], saddle: true, cover: 0.4 }] },
-    bekko: { base: ["#f2ecd9", "#ece2c6"], marks: [{ colors: ["#17171e", "#20202a"], n: [4, 7], speckle: true, cover: 0.2 }] },
-    tancho: { base: ["#f8f3ea", "#f0ead9"], marks: [], crown: true },
-    ogon: { base: ["#e5b13f", "#d9a232"], marks: [], sheen: "#fbe7a8", net: 0.3 },
-    platinum: { base: ["#eef0ee", "#e2e6e4"], marks: [], sheen: "#ffffff", net: 0.24 },
-    asagi: { base: ["#8397a8", "#74899b"], marks: [{ colors: ["#d86a35", "#cf6030"], n: [2, 3], edge: true, cover: 0.16 }], net: 0.5 },
-    chagoi: { base: ["#9c7a45", "#8a6a3c"], marks: [], net: 0.85 },
+  // Every look is its own fish: base coat, fin and tail tints, the pattern it
+  // is known for, and a build. A kohaku is not a showa in other colours.
+  const KOI_DESIGNS = {
+    kohaku: {
+      base: ["#f8f3e8", "#eee4d0"], belly: "#fffcf2", fin: "#f5e2d2", tail: "#f6ecdc",
+      kind: "saddles", saddle: ["#d33f1c", "#c23318", "#e2542a"], saddles: [2, 3],
+    },
+    sanke: {
+      base: ["#f8f3e8", "#eee4d0"], belly: "#fffcf2", fin: "#f1e6d6", tail: "#f6ecdc",
+      kind: "saddles", saddle: ["#d33f1c", "#c93a1c"], saddles: [2, 3],
+      sumi: ["#1b1b24", "#26262f"], spots: [3, 6],
+    },
+    showa: {
+      base: ["#1e1e29", "#141419"], belly: "#2c2c38", fin: "#e9ded0", tail: "#2a2a35",
+      kind: "showa", saddle: ["#d33f1c", "#e04a20"], saddles: [2, 3],
+      white: ["#f2ecdc", "#e8e0cc"], whites: [1, 2],
+    },
+    utsuri: {
+      base: ["#1e1e29", "#141419"], belly: "#2c2c38", fin: "#e6dfd0", tail: "#2a2a35",
+      kind: "utsuri", white: ["#f2ecdc", "#e4dbc4"], whites: [2, 3],
+    },
+    bekko: {
+      base: ["#f3edd9", "#e9dfc0"], belly: "#fdf7e6", fin: "#efe7d0", tail: "#f2ead6",
+      kind: "bekko", sumi: ["#18181f", "#23232c"], spots: [7, 11],
+    },
+    tancho: {
+      base: ["#f9f4ec", "#f0ead9"], belly: "#fffdf6", fin: "#f5ebda", tail: "#f8f1e4",
+      kind: "tancho", crown: ["#d33f1c", "#c23318"],
+    },
+    ogon: {
+      base: ["#e9b845", "#d3a02c"], belly: "#f4d078", fin: "#eabf52", tail: "#e8bd4e",
+      kind: "plain", sheen: "#ffe9a4", net: 0.24, ridge: "#b8891f",
+    },
+    platinum: {
+      base: ["#eef0ee", "#dde3e1"], belly: "#ffffff", fin: "#e6ecea", tail: "#eaf0ee",
+      kind: "plain", sheen: "#ffffff", net: 0.18, ridge: "#bfc9c5",
+    },
+    asagi: {
+      base: ["#8197aa", "#6d8397"], belly: "#c6d2da", fin: "#d8763a", tail: "#93a6b6",
+      kind: "asagi", edge: ["#d8763a", "#c4642c"], head: "#a9b8c2", net: 1.0,
+    },
+    chagoi: {
+      base: ["#9d7c46", "#87663a"], belly: "#c4a473", fin: "#ae8a4d", tail: "#a5834b",
+      kind: "plain", net: 0.72, ridge: "#795b2f",
+    },
   };
 
-  // an organic blob: overlapping ellipses with jitter, at pixel scale
-  function blotch(ctx, rand, cx, cy, w, h, color, clip) {
-    const n = 3 + Math.floor(rand.unit() * 3);
-    for (let i = 0; i < n; i++) {
-      const x = cx + rand.range(-w * 0.34, w * 0.34);
-      const y = cy + rand.range(-h * 0.3, h * 0.3);
-      if (clip && !clip(x, y)) continue;
-      ellipse(ctx, x, y, rand.range(w * 0.45, w * 0.95), rand.range(h * 0.45, h * 0.95), color);
+  // One wrap band across the back: rounded shoulders, ragged ends, solid
+  // middle. This is how a kohaku's red actually sits on the body.
+  function saddleBand(ctx, rand, geo, x0, x1, color) {
+    const { spineRow, bodyLen, maxHalf, inBody } = geo;
+    const left = clamp(x0, 0, bodyLen - 1);
+    const right = clamp(x1, 1, bodyLen - 1);
+    for (let x = Math.floor(left); x <= Math.ceil(right); x++) {
+      const p = (x - left) / Math.max(1, right - left);
+      if (p < 0 || p > 1) continue;
+      const t = x / Math.max(1, bodyLen - 1);
+      const hw = maxHalf * bodyHalfAt(t);
+      // a rounded belly to the band, with stepped shoulders so the ends are
+      // never a straight vertical cut
+      let shape = Math.pow(Math.sin(Math.PI * clamp(p, 0, 1)), 0.6);
+      if (p < 0.22 || p > 0.78) shape -= rand.range(0, 0.28);
+      const half = hw * clamp(shape * (0.97 + rand.range(-0.04, 0.04)), 0, 1);
+      for (let y = Math.round(spineRow - half); y <= Math.round(spineRow + half); y++) {
+        if (!inBody(x, y)) continue;
+        const edge = Math.abs(y - spineRow) > half - 1 ? 0.87 : 1;
+        px(ctx, x, y, rgbToHex(shadeRgb(hexToRgb(color), edge * (1 + rand.range(-0.03, 0.03)))));
+      }
     }
   }
 
-  // a koi lying nose-left, seen from directly above. Returns the canvas plus
+  function sumiSpot(ctx, rand, geo, x, y, r, color) {
+    const { inBody } = geo;
+    for (let dy = -Math.ceil(r); dy <= Math.ceil(r); dy++) {
+      for (let dx = -Math.ceil(r); dx <= Math.ceil(r); dx++) {
+        const d = Math.hypot(dx, dy * 1.25);
+        if (d > r * (0.82 + rand.range(-0.2, 0.2))) continue;
+        const pxx = Math.round(x + dx);
+        const pyy = Math.round(y + dy);
+        if (!inBody(pxx, pyy)) continue;
+        px(ctx, pxx, pyy, rgbToHex(shadeRgb(hexToRgb(color), 1 + rand.range(-0.06, 0.06))));
+      }
+    }
+  }
+
+  // A koi lying nose-left, seen from straight above. Returns the canvas plus
   // the silhouette table the bend mesh rides on.
   function paintKoi(rand, varietyName, length) {
-    const v = KOI_VARIETIES[varietyName] || KOI_VARIETIES.kohaku;
+    const design = KOI_DESIGNS[varietyName] || KOI_DESIGNS.kohaku;
     const L = Math.round(length);
-    // a top-view koi wants length/width around 4.5-5 to read as slim
-    const H = Math.max(9, Math.round(L * 0.3));
+    // body half-width from the length (a top-view koi wants length/width
+    // around 5), then room above and below for the fins and the tail fan
+    const maxHalf = Math.max(2, Math.round(L * 0.115));
+    const H = maxHalf * 2 + 6;
     const { c, ctx } = makeCanvas(L, H);
     const spineRow = Math.floor(H / 2);
-    const bodyLen = Math.round(L * 0.74);
-    const maxHalf = spineRow - 2;
-    const base0 = hexToRgb(v.base[0]);
-    const base1 = hexToRgb(v.base[1]);
-    const dark = rgbToHex(shadeRgb(mixRgb(base0, [20, 18, 22], 0.62), 0.9));
-
+    const bodyLen = Math.round(L * 0.72);
+    const base0 = hexToRgb(design.base[0]);
+    const base1 = hexToRgb(design.base[1]);
+    const belly = hexToRgb(design.belly);
+    const dark = rgbToHex(shadeRgb(mixRgb(base0, [18, 16, 20], 0.6), 0.92));
+    const geo = { L, H, spineRow, bodyLen, maxHalf };
     const inBody = (x, y) => {
       if (x < 0 || x >= bodyLen) return false;
       const t = x / Math.max(1, bodyLen - 1);
       const hw = maxHalf * bodyHalfAt(t);
       return Math.abs(y - spineRow) <= hw;
     };
+    geo.inBody = inBody;
 
-    // base coat with a slow head-to-tail gradient plus a touch of jitter
+    // --- base coat: head to tail gradient, a touch of jitter per column ---
     for (let x = 0; x < bodyLen; x++) {
       const t = x / Math.max(1, bodyLen - 1);
       const hw = Math.max(1, Math.round(maxHalf * bodyHalfAt(t)));
-      const col = rgbToHex(mixRgb(base0, base1, t * 0.9 + rand.range(-0.02, 0.02)));
+      const col = rgbToHex(mixRgb(base0, base1, t * 0.85 + rand.range(-0.02, 0.02)));
       solid(ctx, x, spineRow - hw, 1, hw * 2 + 1, col);
     }
 
-    // markings
-    for (const layer of v.marks || []) {
-      const count = rand.int(layer.n[0], layer.n[1]);
+    // --- the pattern this variety is known for ---
+    if (design.kind === "saddles") {
+      // kohaku and sanke: two or three bold red wraps with clean shoulders
+      const count = rand.int(design.saddles[0], design.saddles[1]);
       for (let i = 0; i < count; i++) {
-        const color = rand.pick(layer.colors);
-        if (layer.saddle) {
-          const cx = bodyLen * rand.range(0.2, 0.86);
-          const w = bodyLen * rand.range(0.1, 0.19) * (1 + layer.cover);
+        const slot = 0.2 + (i + rand.range(0.15, 0.65)) * (0.68 / count);
+        const cx = bodyLen * slot;
+        const w = bodyLen * rand.range(0.13, 0.2);
+        const color = rand.pick(design.saddle);
+        saddleBand(ctx, rand, geo, cx - w * 0.5, cx + w * 0.5, color);
+        if (rand.chance(0.6)) {
+          const sx = cx + w * rand.range(0.5, 0.9) * rand.sign();
+          saddleBand(ctx, rand, geo, sx - w * 0.16, sx + w * 0.16, color);
+        }
+      }
+      if (design.sumi) {
+        const spots = rand.int(design.spots[0], design.spots[1]);
+        for (let i = 0; i < spots; i++) {
+          const cx = bodyLen * rand.range(0.16, 0.92);
           const t = cx / Math.max(1, bodyLen - 1);
           const hw = maxHalf * bodyHalfAt(t);
-          blotch(ctx, rand, cx, spineRow + rand.range(-2, 2), w * 0.6, hw * rand.range(0.7, 1.0), color, inBody);
-        } else if (layer.speckle) {
-          const cx = bodyLen * rand.range(0.15, 0.9);
-          const cy = spineRow + rand.range(-maxHalf * 0.8, maxHalf * 0.8);
-          const spread = bodyLen * 0.14;
-          const n = rand.int(4, 9);
-          for (let k = 0; k < n; k++) {
-            const x = Math.round(cx + rand.range(-spread, spread));
-            const y = Math.round(cy + rand.range(-maxHalf * 0.9, maxHalf * 0.9));
-            if (inBody(x, y)) solid(ctx, x, y, rand.chance(0.35) ? 2 : 1, 1, color);
-          }
-        } else if (layer.edge) {
-          // asagi-style: small orange marks that hug the body edge
-          const side = rand.sign();
-          const cx = bodyLen * rand.range(0.25, 0.85);
-          const t = cx / Math.max(1, bodyLen - 1);
-          const hw = maxHalf * bodyHalfAt(t);
-          const cy = spineRow + side * hw * rand.range(0.55, 0.9);
-          blotch(ctx, rand, cx, cy, 2.5, hw * 0.3, color, inBody);
+          sumiSpot(ctx, rand, geo, cx, spineRow + rand.range(-hw * 0.85, hw * 0.85),
+            rand.range(0.7, 1.5), rand.pick(design.sumi));
+        }
+      }
+    } else if (design.kind === "showa") {
+      // black fish: red wraps, then white patches on head, flank and tail
+      const reds = rand.int(design.saddles[0], design.saddles[1]);
+      for (let i = 0; i < reds; i++) {
+        const cx = bodyLen * rand.range(0.24, 0.86);
+        const w = bodyLen * rand.range(0.12, 0.2);
+        saddleBand(ctx, rand, geo, cx - w * 0.5, cx + w * 0.5, rand.pick(design.saddle));
+      }
+      const whites = rand.int(design.whites[0], design.whites[1]);
+      for (let i = 0; i < whites; i++) {
+        const cx = i === 0 ? bodyLen * rand.range(0.12, 0.22) : bodyLen * rand.range(0.3, 0.9);
+        const w = bodyLen * (i === 0 ? rand.range(0.06, 0.1) : rand.range(0.1, 0.17));
+        saddleBand(ctx, rand, geo, cx - w * 0.5, cx + w * 0.5, rand.pick(design.white));
+      }
+    } else if (design.kind === "utsuri") {
+      // shiro utsuri: white only, no red anywhere
+      const whites = rand.int(design.whites[0], design.whites[1]);
+      for (let i = 0; i < whites; i++) {
+        const cx = i === 0 ? bodyLen * rand.range(0.14, 0.3) : bodyLen * rand.range(0.36, 0.88);
+        const w = bodyLen * (i === 0 ? rand.range(0.07, 0.12) : rand.range(0.11, 0.19));
+        saddleBand(ctx, rand, geo, cx - w * 0.5, cx + w * 0.5, rand.pick(design.white));
+      }
+    } else if (design.kind === "bekko") {
+      // cream fish, scattered black spots of two sizes
+      const spots = rand.int(design.spots[0], design.spots[1]);
+      for (let i = 0; i < spots; i++) {
+        const cx = bodyLen * rand.range(0.14, 0.94);
+        const t = cx / Math.max(1, bodyLen - 1);
+        const hw = maxHalf * bodyHalfAt(t);
+        const big = rand.chance(0.45);
+        sumiSpot(ctx, rand, geo, cx, spineRow + rand.range(-hw * 0.8, hw * 0.8),
+          big ? rand.range(1.2, 1.9) : rand.range(0.6, 1.0), rand.pick(design.sumi));
+      }
+    } else if (design.kind === "tancho") {
+      // the prized one: a single clean crown between the eyes
+      const cx = bodyLen * 0.19;
+      const hw = maxHalf * bodyHalfAt(cx / Math.max(1, bodyLen - 1));
+      const rx = Math.max(2, bodyLen * 0.088);
+      const ry = Math.max(2, hw * 0.88);
+      const crownCol = rand.pick(design.crown);
+      for (let dy = -Math.ceil(ry); dy <= Math.ceil(ry); dy++) {
+        for (let dx = -Math.ceil(rx); dx <= Math.ceil(rx); dx++) {
+          if (Math.hypot(dx / rx, dy / ry) > 1) continue;
+          const x = Math.round(cx + dx);
+          const y = Math.round(spineRow + dy);
+          if (!inBody(x, y)) continue;
+          px(ctx, x, y, rgbToHex(shadeRgb(hexToRgb(crownCol), Math.hypot(dx / rx, dy / ry) > 0.86 ? 0.9 : 1)));
+        }
+      }
+    } else if (design.kind === "asagi") {
+      // blue-grey back in a bold scale net, orange marks along the flanks,
+      // and a paler head: the blue net is the whole point of an asagi
+      const netA = hexToRgb(design.base[0]);
+      const netB = shadeRgb(hexToRgb(design.base[1]), 1.18);
+      const headRgb = hexToRgb(design.head);
+      for (let x = 0; x < bodyLen; x++) {
+        const t = x / Math.max(1, bodyLen - 1);
+        const hw = Math.max(1, Math.round(maxHalf * bodyHalfAt(t)));
+        const headAmt = 1 - smoothstep(0.18, 0.34, t);
+        for (let y = spineRow - hw; y <= spineRow + hw; y++) {
+          const cell = (Math.floor(x / 2) + Math.floor(y / 2)) % 2 === 0;
+          let col = mixRgb(netA, netB, cell ? 0.85 : 0.15);
+          col = shadeRgb(col, 1 + (valueNoise2(x * 0.7, y * 0.7) - 0.5) * 0.1);
+          if (headAmt > 0) col = mixRgb(col, headRgb, headAmt * 0.8);
+          px(ctx, x, y, rgbToHex(col));
+        }
+      }
+      const marks = rand.int(3, 5);
+      for (let i = 0; i < marks; i++) {
+        const cx = Math.round(bodyLen * rand.range(0.3, 0.9));
+        const side = rand.sign();
+        const t = cx / Math.max(1, bodyLen - 1);
+        const hw = maxHalf * bodyHalfAt(t);
+        const len = rand.int(2, 4);
+        const col = rgbToHex(shadeRgb(hexToRgb(rand.pick(design.edge)), 1 + rand.range(-0.05, 0.05)));
+        for (let k = 0; k < len; k++) {
+          const y = spineRow + side * Math.round(hw * rand.range(0.7, 0.95));
+          px(ctx, cx + k, y, col);
         }
       }
     }
 
-    // scale net: 1px staggered flecks, only a whisper of contrast
-    if (v.net) {
+    // --- scale net (chagoi, ogon, platinum) ---
+    if (design.net && design.kind !== "asagi") {
       const netCol = rgbToHex(shadeRgb(base0, 0.9));
-      const step = 2 + (v.net > 0.6 ? 0 : 1);
-      for (let x = 2; x < bodyLen; x += step) {
-        const row = (x / step) | 0;
-        for (let y = spineRow - maxHalf + ((row % 2) ? 0 : 1); y <= spineRow + maxHalf; y += 2) {
-          if (inBody(x, y) && y !== spineRow) px(ctx, x, y, netCol);
-        }
-      }
-    }
-
-    // metallic sheen: a soft stripe down the spine
-    if (v.sheen) {
-      const sheenRgb = hexToRgb(v.sheen);
-      for (let x = 2; x < bodyLen - 2; x++) {
+      const netLight = rgbToHex(shadeRgb(base0, 1.05));
+      for (let x = 2; x < bodyLen - 1; x += 2) {
         const t = x / Math.max(1, bodyLen - 1);
         const hw = maxHalf * bodyHalfAt(t);
-        const band = Math.max(1, Math.round(hw * 0.5));
-        for (let y = spineRow - band; y <= spineRow + band; y++) {
+        for (let y = Math.round(spineRow - hw) + 1; y <= Math.round(spineRow + hw) - 1; y++) {
           if (!inBody(x, y)) continue;
-          const k = 0.35 - (Math.abs(y - spineRow) / Math.max(1, band)) * 0.3;
-          const cur = ctx.getImageData(x, y, 1, 1).data;
-          ctx.fillStyle = rgbToHex(mixRgb([cur[0], cur[1], cur[2]], sheenRgb, Math.max(0, k)));
-          ctx.fillRect(x, y, 1, 1);
+          const cell = (Math.floor(x / 2) + Math.floor(y)) % 2 === 0;
+          if (cell && rand.chance(design.net * 0.5)) px(ctx, x, y, netCol);
+          else if (!cell && rand.chance(design.net * 0.25)) px(ctx, x, y, netLight);
         }
       }
     }
 
-    // dorsal ridge: a darker line down the back half of the spine
-    const ridgeCol = rgbToHex(shadeRgb(base0, v.base[0] === "#1b1b24" ? 1.5 : 0.86));
-    for (let x = Math.round(bodyLen * 0.45); x < bodyLen; x++) {
-      px(ctx, x, spineRow, ridgeCol);
-    }
+    // --- dorsal ridge: a thin line down the back half ---
+    const ridgeCol = rgbToHex(design.ridge
+      ? hexToRgb(design.ridge)
+      : shadeRgb(base0, base0[0] + base0[1] + base0[2] < 300 ? 1.6 : 0.88));
+    for (let x = Math.round(bodyLen * 0.5); x < bodyLen; x++) px(ctx, x, spineRow, ridgeCol);
 
-    // tancho: one clean red crown between the eyes
-    if (v.crown) {
-      const cx = Math.round(bodyLen * 0.2);
-      ellipse(ctx, cx, spineRow, Math.max(2, L * 0.045), Math.max(2, (maxHalf * 0.62)), "#d8401f");
+    // --- sheen and lateral shading, in one pass over the pixels ---
+    // the back catches the light, the flanks fall away, and the very edge
+    // picks up the pale belly: this is what makes the body read as round
+    const img = ctx.getImageData(0, 0, L, H);
+    const data = img.data;
+    const sheenRgb = design.sheen ? hexToRgb(design.sheen) : null;
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < bodyLen; x++) {
+        const t = x / Math.max(1, bodyLen - 1);
+        const hw = maxHalf * bodyHalfAt(t);
+        const rel = Math.abs(y - spineRow) / Math.max(1, hw);
+        if (rel > 1) continue;
+        const o = (y * L + x) * 4;
+        if (data[o + 3] === 0) continue;
+        let col = [data[o], data[o + 1], data[o + 2]];
+        if (sheenRgb) {
+          const band = Math.max(1, hw * 0.62);
+          const dy = Math.abs(y - spineRow);
+          if (dy <= band) col = mixRgb(col, sheenRgb, (1 - dy / band) * 0.5);
+        }
+        col = shadeRgb(col, 1 + 0.06 * (1 - rel) - 0.2 * Math.pow(rel, 1.5));
+        if (rel > 0.86) col = mixRgb(col, belly, 0.3);
+        data[o] = col[0];
+        data[o + 1] = col[1];
+        data[o + 2] = col[2];
+      }
     }
+    ctx.putImageData(img, 0, 0);
 
-    // pectoral fins: short rounded lobes tucked at the gills
-    const finCol = rgbToHex(v.base[0] === "#1b1b24" || v.base[0] === "#9c7a45" ? shadeRgb(base0, 1.5) : shadeRgb(base0, 0.93));
+    // --- pectoral fins: short lobes at the gills, swept back ---
+    const finRgb = hexToRgb(design.fin);
+    const gx = Math.round(bodyLen * 0.27);
     for (const side of [-1, 1]) {
-      const gx = Math.round(bodyLen * 0.24);
       const t = gx / Math.max(1, bodyLen - 1);
       const hw = maxHalf * bodyHalfAt(t);
-      const reach = Math.max(2, Math.round(hw * rand.range(0.65, 0.95)));
+      const reach = Math.max(2, Math.round(hw * rand.range(0.45, 0.65)));
       for (let i = 0; i < reach; i++) {
-        const y = spineRow + side * (hw + i);
-        if (y < 0 || y >= H) break;
-        const w = Math.max(1, Math.round(reach * 0.55 - i * 0.4));
-        solid(ctx, gx - (w >> 1), y, w, 1, finCol);
+        const y = Math.round(spineRow + side * (hw + i));
+        if (y < 1 || y >= H) break;
+        const wid = Math.max(1, Math.round(reach * 0.6 - i * 0.4));
+        const col = rgbToHex(shadeRgb(finRgb, 1 - i / (reach * 3.2)));
+        for (let k = 0; k < wid; k++) px(ctx, gx + i - k, y, col);
       }
     }
 
-    // tail fan: flares from the peduncle, forked at the tip
-    const tailCol = rgbToHex(v.base[0] === "#1b1b24" || v.base[0] === "#9c7a45" ? shadeRgb(base0, 1.45) : shadeRgb(base0, 0.95));
-    const tailCol2 = rgbToHex(shadeRgb(hexToRgb(tailCol), 0.82));
-    const rootT = 0.74;
-    const rootHalf = maxHalf * bodyHalfAt(1) + 1;
+    // --- tail fan: two translucent lobes with the fork between them ---
+    const tailBase = hexToRgb(design.tail);
+    const rootHalf = Math.max(1.2, maxHalf * 0.34);
+    const tailSpan = Math.max(2, L - 1 - bodyLen);
     for (let x = bodyLen; x < L; x++) {
-      const p = (x - bodyLen) / Math.max(1, (L - 1) - bodyLen);
-      const half = rootHalf + (maxHalf * 1.15 - rootHalf) * Math.pow(p, 0.72);
-      const notch = p > 0.62 ? ((p - 0.62) / 0.38) * rootHalf * 0.6 : 0;
+      const p = clamp((x - bodyLen) / tailSpan, 0, 1);
+      const half = rootHalf + (maxHalf * 1.15 - rootHalf) * Math.pow(p, 0.7);
+      // the notch runs from the peduncle all the way out: two lobes, not a paddle
+      const inner = rootHalf * 0.3 + half * Math.pow(p, 1.1) * 0.62;
       for (const side of [-1, 1]) {
-        const y0 = spineRow;
-        const y1 = spineRow + side * (half - notch);
-        const lo = Math.min(y0, y1);
-        const hi = Math.max(y0, y1);
-        for (let y = Math.round(lo); y <= Math.round(hi); y++) {
-          if (y < 0 || y >= H) continue;
-          const inner = Math.abs(y - spineRow) < half * 0.45;
-          px(ctx, x, y, inner ? tailCol : tailCol2);
+        for (let y = Math.round(inner); y <= Math.round(half); y++) {
+          const yy = Math.round(spineRow + side * y);
+          if (yy < 0 || yy >= H) continue;
+          const rel = (y - inner) / Math.max(0.5, half - inner);
+          const col = mixRgb(tailBase, belly, 0.22 + (1 - rel) * 0.45);
+          px(ctx, x, yy, rgbToHex(shadeRgb(col, 1 - 0.1 * (1 - rel))));
         }
       }
     }
-    // tail rays
-    for (let r = 0; r < 2; r++) {
-      const p = 0.45 + r * 0.35;
-      const x = bodyLen + Math.round(p * (L - 1 - bodyLen));
+    // rays on the lobes, and a hint of the peduncle's shadow
+    for (const ray of [0.32, 0.6, 0.86]) {
+      const x = bodyLen + Math.round(ray * tailSpan);
+      const half = rootHalf + (maxHalf * 1.15 - rootHalf) * Math.pow(ray, 0.7);
+      const rayCol = rgbToHex(shadeRgb(tailBase, 0.84));
       for (const side of [-1, 1]) {
-        const half = rootHalf + (maxHalf * 1.15 - rootHalf) * Math.pow(p, 0.72);
-        const y = Math.round(spineRow + side * half * 0.78);
-        if (y >= 0 && y < H) px(ctx, x, y, tailCol2);
+        const yy = Math.round(spineRow + side * half * 0.82);
+        if (yy > 0 && yy < H) px(ctx, x, yy, rayCol);
       }
     }
 
-    // eyes: pale chip with a dark centre on dark fish, plain dark pair otherwise
-    const eyeX = Math.max(1, Math.round(bodyLen * 0.075));
-    const eyeHalf = Math.max(1, Math.round(maxHalf * bodyHalfAt(eyeX / bodyLen) * 0.62));
-    const darkBase = base0[0] + base0[1] + base0[2] < 260;
+    // --- face: eyes, and a mouth notch at the snout ---
+    const eyeX = Math.max(1, Math.round(bodyLen * 0.1));
+    const eyeHalf = Math.max(1, Math.round(maxHalf * bodyHalfAt(eyeX / Math.max(1, bodyLen - 1)) * 0.62));
+    const darkFish = base0[0] + base0[1] + base0[2] < 300;
     for (const side of [-1, 1]) {
       const y = spineRow + side * eyeHalf;
-      if (darkBase) {
-        px(ctx, eyeX - 1, y, "#cfd3cf");
-        px(ctx, eyeX, y, "#14141a");
+      if (darkFish) {
+        px(ctx, eyeX - 1, y, "#c9cec9");
+        px(ctx, eyeX, y, "#101018");
       } else {
         px(ctx, eyeX, y, "#1a1a20");
       }
     }
+    const mouthCol = rgbToHex(shadeRgb(base0, 0.72));
+    for (const side of [-1, 0, 1]) px(ctx, 0, spineRow + side, mouthCol);
 
     outline(c, dark, 40);
     harden(c);
     return { canvas: c, extents: measureExtents(c, spineRow), length: L, height: H, spineRow, variety: varietyName };
   }
+
 
   // ------------------------------------------------------------- minnow
 
@@ -437,79 +583,104 @@ const TEXTURES = (() => {
 
   // ----------------------------------------------------------- plants etc
 
+  // A water-lily pad from above: a clean disc with one crisp wedge cut to the
+  // centre, a raised rim, radiating veins, and a sheen where the sun hits it.
   function paintLilyPad(rand, size) {
     const S = Math.round(size);
     const { c, ctx } = makeCanvas(S, S);
     const cx = S / 2 - 0.5;
     const cy = S / 2 - 0.5;
     const r = S / 2 - 1;
-    const green = [88, 128, 58];
-    const light = [116, 158, 74];
-    const dark = [58, 92, 44];
-    const notch = rand.range(-0.5, 0.5);
-    const notchWidth = rand.range(0.22, 0.36) * TAU;
+    const green = [86, 126, 56];
+    const light = [118, 158, 76];
+    const dark = [54, 86, 40];
+    const rimCol = [42, 72, 32];
+    const notchAngle = rand.range(-0.7, 0.7);
+    const notchHalf = rand.range(0.16, 0.26); // half-angle of the wedge cut
+    const hueShift = rand.range(-0.05, 0.05);
     for (let y = 0; y < S; y++) {
       for (let x = 0; x < S; x++) {
         const dx = x - cx;
         const dy = y - cy;
         const d = Math.hypot(dx, dy);
-        if (d > r) continue;
+        if (d > r + 0.5) continue;
         const a = Math.atan2(dy, dx);
-        const da = Math.abs(wrapAngle(a - notch));
-        if (da < notchWidth / 2) continue; // the wedge cut
-        // only a gentle wobble: pads should read as clean round leaves
-        const edge = r * (0.965 + valueNoise2(Math.cos(a) * 3 + 31, Math.sin(a) * 3) * 0.07);
+        if (Math.abs(wrapAngle(a - notchAngle)) < notchHalf) continue;
+        const edge = r * (0.985 + (valueNoise2(Math.cos(a) * 2.6 + 17, Math.sin(a) * 2.6 + 4) - 0.5) * 0.05);
         if (d > edge) continue;
-        const t = d / r;
-        let col = mixRgb(light, green, smoothstep(0.3, 0.92, t));
-        if (d > edge - 1.5) col = dark;
-        col = shadeRgb(col, 1 + (valueNoise2(x * 0.4, y * 0.4) - 0.5) * 0.1);
+        const t = d / Math.max(1, edge);
+        let col = mixRgb(light, green, smoothstep(0.15, 0.8, t));
+        col = mixRgb(col, dark, smoothstep(0.82, 1.0, t) * 0.62);
+        if (t > 0.9) col = mixRgb(col, rimCol, 0.6);
+        // sun from the upper left
+        const sunDot = (dx * -0.5 + dy * -0.78) / Math.max(1, d);
+        col = shadeRgb(col, 1 + Math.max(0, sunDot) * 0.07 * (1 - t * 0.45));
+        col = shadeRgb(col, 1 + (valueNoise2(x * 0.35, y * 0.35) - 0.5) * 0.06);
+        col = shadeRgb(col, 1 + hueShift);
         px(ctx, x, y, rgbToHex(col));
       }
     }
-    // veins
-    const veins = rand.int(4, 6);
+    // veins: thin, faint, and they stop short of the centre so the leaf stays
+    // a leaf and not a cartwheel
+    const veins = rand.int(6, 9);
+    const veinCol = rgbToHex(shadeRgb(green, 0.87));
     for (let i = 0; i < veins; i++) {
-      const a = notch + notchWidth / 2 + (i / veins) * (TAU - notchWidth) + rand.range(-0.1, 0.1);
-      for (let d = r * 0.25; d < r * 0.88; d += 1) {
-        const x = Math.round(cx + Math.cos(a) * d);
-        const y = Math.round(cy + Math.sin(a) * d);
-        px(ctx, x, y, rgbToHex(mixRgb(dark, green, 0.45)));
+      const a0 = notchAngle + notchHalf + 0.14 + (i / veins) * (TAU - notchHalf * 2 - 0.28);
+      for (let d = r * 0.24; d < r * 0.84; d += 1) {
+        const fade = smoothstep(0.24, 0.42, d / r) * (1 - smoothstep(0.72, 0.86, d / r));
+        if (fade < 0.35) continue;
+        const bend = Math.sin(d * 0.45 + i * 1.7) * 0.05;
+        const x = Math.round(cx + Math.cos(a0 + bend) * d);
+        const y = Math.round(cy + Math.sin(a0 + bend) * d);
+        px(ctx, x, y, veinCol);
       }
     }
-    ellipse(ctx, cx, cy, Math.max(1, r * 0.2), Math.max(1, r * 0.2), rgbToHex(mixRgb(light, green, 0.35)));
+    // where the stem meets the leaf
+    ellipse(ctx, cx, cy, Math.max(1, r * 0.14), Math.max(1, r * 0.14), rgbToHex(shadeRgb(dark, 0.8)));
+    px(ctx, Math.round(cx), Math.round(cy), rgbToHex(shadeRgb(light, 1.06)));
     harden(c);
     return c;
   }
 
+  // A lotus flower: an outer ring of petals, an inner ring, a ring of stamens
+  // and a tight core. Outlined, because it has to hold up against a green pad.
   function paintLotusFlower(rand, colorway, size) {
     const S = Math.round(size);
     const { c, ctx } = makeCanvas(S, S);
     const cx = S / 2;
     const cy = S / 2;
-    const petals = rand.int(5, 7);
-    const cols = {
-      pink: ["#f2a8c0", "#e07a9e", "#c95c82"],
-      white: ["#ffffff", "#f0ece0", "#d8d2c2"],
-      red: ["#e2556a", "#c93a52", "#a82c42"],
-    }[colorway] || ["#f2a8c0", "#e07a9e", "#c95c82"];
+    const palettes = {
+      pink: { outer: ["#e07f9f", "#c95c82"], inner: ["#f6b8cd", "#f0a2bd"] },
+      white: { outer: ["#e8e2d2", "#cfc8b4"], inner: ["#ffffff", "#f7f3e8"] },
+      red: { outer: ["#d0435c", "#b62c45"], inner: ["#ea7086", "#dd5a70"] },
+    };
+    const pal = palettes[colorway] || palettes.pink;
+    const outer = pal.outer.map(hexToRgb);
+    const inner = pal.inner.map(hexToRgb);
+
+    const petals = 6;
     for (let i = 0; i < petals; i++) {
-      const a = (i / petals) * TAU + rand.range(-0.12, 0.12);
-      const len = S * rand.range(0.3, 0.42);
-      const wid = S * rand.range(0.1, 0.15);
-      const px1 = cx + Math.cos(a) * len * 0.55;
-      const py1 = cy + Math.sin(a) * len * 0.55;
-      ctx.fillStyle = i % 2 ? cols[0] : cols[1];
-      ctx.beginPath();
-      ctx.ellipse(px1, py1, wid, len * 0.62, a, 0, TAU);
-      ctx.fill();
+      const a = (i / petals) * TAU + rand.range(-0.08, 0.08);
+      const len = S * rand.range(0.34, 0.42);
+      const wid = S * rand.range(0.085, 0.11);
+      ellipse(ctx, cx + Math.cos(a) * len * 0.52, cy + Math.sin(a) * len * 0.52, wid, len * 0.56, rgbToHex(outer[i % 2]));
     }
-    ellipse(ctx, cx, cy, S * 0.16, S * 0.16, cols[2]);
-    ellipse(ctx, cx, cy, S * 0.09, S * 0.09, "#f2d45c");
-    px(ctx, Math.round(cx), Math.round(cy), "#e8b93c");
+    for (let i = 0; i < 5; i++) {
+      const a = (i / 5) * TAU + TAU / 10 + rand.range(-0.06, 0.06);
+      const len = S * rand.range(0.2, 0.26);
+      const wid = S * rand.range(0.07, 0.09);
+      ellipse(ctx, cx + Math.cos(a) * len * 0.5, cy + Math.sin(a) * len * 0.5, wid, len * 0.56, rgbToHex(inner[i % 2]));
+    }
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * TAU + 0.3;
+      px(ctx, Math.round(cx + Math.cos(a) * S * 0.08), Math.round(cy + Math.sin(a) * S * 0.08), "#f2d45c");
+    }
+    ellipse(ctx, cx, cy, Math.max(1, S * 0.06), Math.max(1, S * 0.06), "#cfa22c");
+    outline(c, rgbToHex(shadeRgb(outer[1], 0.78)), 40);
     harden(c);
     return c;
   }
+
 
   function paintMossClump(rand, colors) {
     const W = 13;
@@ -676,6 +847,6 @@ const TEXTURES = (() => {
     paintKoi, paintMinnow, paintButterfly, paintButterflyRest,
     paintLilyPad, paintLotusFlower, paintMossClump, paintStone,
     paintGrassTuft, paintReedClump, paintShoreFlower, paintDuckweed, paintBlob,
-    KOI_VARIETIES, MINNOW_VARIANTS,
+    KOI_DESIGNS, MINNOW_VARIANTS,
   };
 })();

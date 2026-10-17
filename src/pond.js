@@ -27,13 +27,14 @@ function rimFactor(table, angle) {
 
 function createPond(res, rimTable) {
   const p = CONFIG.ponds;
-  const cx = res.x * p.cx;
-  const cy = res.y * p.cy;
-  const rx = res.x * p.rx;
-  // on a tall/narrow viewport the pond must not spill out of the frame
-  const ry = Math.min(res.y * p.ry, rx * 1.3);
+  const cx = res.x * 0.5;
+  const cy = res.y * 0.5;
+  // the ellipse reaches past every edge of the frame, and the wobbled rim
+  // rides on it, so no shoreline is ever visible inside the canvas
+  const rx = res.x * p.overscan;
+  const ry = res.y * p.overscan;
 
-  // 0 at the middle, 1 at the shoreline
+  // 0 at the deepest point, ~0.5-0.7 at the corners of the frame
   const d = (x, y) => {
     const qx = (x - cx) / rx;
     const qy = (y - cy) / ry;
@@ -53,22 +54,25 @@ function createPond(res, rimTable) {
       const len = Math.hypot(dx, dy) || 1;
       return { x: dx / len, y: dy / len };
     },
-    // a point in open water between minD and maxD
-    randomPoint(rand, maxD = 0.8, minD = 0.12) {
+    // any point inside the frame, optionally preferring the shallows
+    randomPoint(rand, maxD = 0.8, minD = 0) {
       for (let i = 0; i < 60; i++) {
-        const x = cx + rand.range(-1, 1) * rx;
-        const y = cy + rand.range(-1, 1) * ry;
+        const x = rand.range(8, Math.max(16, res.x - 8));
+        const y = rand.range(8, Math.max(16, res.y - 8));
         const pd = d(x, y);
         if (pd <= maxD && pd >= minD) return { x, y };
       }
       return { x: cx, y: cy };
     },
-    // a point right at the waterline
-    rimPoint(rand, f0 = 0.94, f1 = 1.06) {
-      const angle = rand.angle();
-      return pointAt(angle, rand.range(f0, f1));
+    // a point right at the frame border (inset < 0 sits just outside the view)
+    edgePoint(rand, inset) {
+      const side = rand.int(0, 3);
+      if (side === 0) return { x: rand.range(6, res.x - 6), y: -inset };
+      if (side === 1) return { x: res.x + inset, y: rand.range(6, res.y - 6) };
+      if (side === 2) return { x: rand.range(6, res.x - 6), y: res.y + inset };
+      return { x: -inset, y: rand.range(6, res.y - 6) };
     },
-    // depth 0..1 of the floor below a point (0 = right at the surface rim)
+    // depth 0..1 of the floor below a point (0 = the deepest spot)
     floorDepth(x, y) {
       return clamp(d(x, y), 0, 1);
     },

@@ -729,6 +729,13 @@ function drawFrame() {
     }
   }
 
+  // mossy stones standing in the shallows (under the surface, so the water
+  // pass bends and tints them with everything else)
+  for (const s of scenery.shore) {
+    if (!s.submerged) continue;
+    gfx.drawSprite(s.tex, s.x, s.y, s.w, s.h, s.rot, [0.86, 0.94, 0.94, 0.95], false);
+  }
+
   // butterfly shadows and their faint reflection on the surface
   for (const bf of Pond.butterflies) {
     gfx.drawSprite(blob, bf.x + 1.5, bf.y + 2.4, 6, 4, 0, [0.08, 0.15, 0.13, CONFIG.shadows.butterflyAlpha], false);
@@ -742,8 +749,9 @@ function drawFrame() {
   gfx.bindTarget(gfx.targets.scene);
   gfx.drawWater(world);
 
-  // ---- floating things and the bank, drawn crisp on top ----
+  // ---- floating things and the plants at the frame edge, crisp on top ----
   for (const s of scenery.shore) {
+    if (s.submerged) continue;
     const y = s.anchor === "bottom" ? s.y - s.h * 0.5 : s.y;
     gfx.drawSprite(s.tex, s.x, y, s.w, s.h, s.rot, [1, 1, 1, 1], false);
   }

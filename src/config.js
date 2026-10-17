@@ -9,13 +9,12 @@ const CONFIG = {
   pixelSize: 4,
 
   ponds: {
-    // pond ellipse as a fraction of the canvas
-    cx: 0.5,
-    cy: 0.52,
-    rx: 0.43,
-    ry: 0.44,
-    wobbleA: 0.11, // low-frequency shoreline wobble
-    wobbleB: 0.05,
+    // the water fills the whole canvas: the shoreline is pushed outside the
+    // frame, so the visible area is all pond with the floor shelving up
+    // toward the edges
+    overscan: 1.28,
+    wobbleA: 0.1,
+    wobbleB: 0.045,
   },
 
   koi: {
@@ -106,7 +105,6 @@ const CONFIG = {
     maxBend: 9, // hard clamp, px
     microBend: 1.4, // sub-pixel swell bend
     specular: 0.16,
-    edgeGlow: 0.05,
     deepTint: [0.60, 0.80, 0.84], // multiplied into deep water
     shallowLift: 0.03,
     shallowColor: [0.62, 0.80, 0.74], // the shallows keep a water hue
@@ -129,7 +127,7 @@ const CONFIG = {
   bed: {
     sand: [176, 162, 130],
     mud: [120, 128, 92],
-    deep: [30, 66, 64],
+    deep: [26, 60, 58],
     algae: [58, 92, 58],
     pebble: [148, 140, 122],
     bank: [96, 132, 62],

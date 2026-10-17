@@ -53,6 +53,10 @@ float vnoise(vec2 p) {
   return mix(mix(a, b, local.x), mix(c, d, local.x), local.y);
 }
 
+vec3 shadeRgb3(vec3 c, float k) {
+  return clamp(c * k, 0.0, 1.0);
+}
+
 // displacement of every live ring, in pixels. The same maths lives in
 // water.js so the CPU can bob floating things with it.
 vec2 ringDisp(vec2 p) {
@@ -359,9 +363,6 @@ Gfx.prototype.drawBed = function (world) {
   gl.uniform3f(u.uDeep, ...bed.deep.map((v) => v / 255));
   gl.uniform3f(u.uAlgae, ...bed.algae.map((v) => v / 255));
   gl.uniform3f(u.uPebble, ...bed.pebble.map((v) => v / 255));
-  gl.uniform3f(u.uBank, ...bed.bank.map((v) => v / 255));
-  gl.uniform3f(u.uBankDark, ...bed.bankDark.map((v) => v / 255));
-  gl.uniform3f(u.uMudEdge, ...bed.mudEdge.map((v) => v / 255));
   gl.uniform1f(u.uCaustics, CONFIG.caustics.amp);
   gl.bindVertexArray(this.quadVao);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
@@ -380,7 +381,6 @@ Gfx.prototype.drawWater = function (world) {
   gl.uniform1f(u.uBend, w.bend);
   gl.uniform1f(u.uMaxBend, w.maxBend);
   gl.uniform1f(u.uSpecular, w.specular);
-  gl.uniform1f(u.uEdgeGlow, w.edgeGlow);
   gl.uniform1f(u.uShallowLift, w.shallowLift);
   gl.uniform1f(u.uShallowMix, w.shallowMix);
   gl.uniform3f(u.uShallowColor, w.shallowColor[0], w.shallowColor[1], w.shallowColor[2]);
@@ -651,7 +651,7 @@ const BED_VS = FLAT_VS;
 
 const BED_FS = `#version 300 es
 ${GLSL_COMMON}
-uniform vec3 uSand, uMud, uDeep, uAlgae, uPebble, uBank, uBankDark, uMudEdge;
+uniform vec3 uSand, uMud, uDeep, uAlgae, uPebble;
 uniform float uCaustics;
 in vec2 vUV;
 out vec4 outColor;
@@ -661,21 +661,26 @@ void main() {
   float d = pondD(p);
   vec2 g = ringDisp(p) * 1.4 + swellGrad(p) * 6.0;
 
-  // --- the water floor ---
-  // d = 0 in the middle of the pond, 1 at the shoreline
+  // --- the floor of the pond, all the way to the frame ---
+  // d is 0 at the deepest point and rises toward the edges
   float mottle = vnoise(p * 0.05) * 0.62 + vnoise(p * 0.13 + 7.3) * 0.38;
   vec3 floorCol = mix(uSand, uMud, smoothstep(0.34, 0.78, mottle));
-  floorCol = mix(floorCol, uDeep, smoothstep(0.08, 0.7, 1.0 - d) * 0.9);
-  // patches of settled algae in the middle depths, kept soft
+  floorCol = mix(floorCol, uDeep, smoothstep(0.03, 0.5, 1.0 - d) * 0.94);
+  // patches of settled algae and weed, in two scales, to break the field up
   float algae = smoothstep(0.55, 0.85, vnoise(p * 0.026 + 31.7));
-  floorCol = mix(floorCol, uAlgae, algae * 0.26 * (1.0 - abs(d - 0.55) * 1.6));
-  // pebbles near the shore
+  floorCol = mix(floorCol, uAlgae, algae * 0.3 * (1.0 - abs(d - 0.42) * 1.3));
+  float weed = smoothstep(0.62, 0.92, vnoise(p * 0.058 + 71.3));
+  floorCol = mix(floorCol, shadeRgb3(uAlgae, 0.78), weed * 0.22);
+  // pebbles, thicker where the floor shelves up
   vec2 cell = floor(p / 8.0);
   vec2 cellLocal = fract(p / 8.0) - 0.5;
   float pebble = hash12(cell + 11.0);
   float pebbleDist = length(cellLocal * vec2(1.0, 0.72));
-  float pebbleMask = step(0.9, pebble) * (1.0 - smoothstep(0.24, 0.34, pebbleDist)) * smoothstep(0.62, 0.85, d);
+  float pebbleMask = step(0.88, pebble) * (1.0 - smoothstep(0.24, 0.34, pebbleDist)) * smoothstep(0.3, 0.6, d);
   floorCol = mix(floorCol, mix(uPebble, uSand, 0.35), pebbleMask * 0.85);
+  // fine sand ripples in the shallows
+  float ripples = sin(dot(p, normalize(vec2(0.7, 0.9))) * 0.22 + vnoise(p * 0.02) * 6.0);
+  floorCol *= 1.0 + ripples * 0.028 * smoothstep(0.32, 0.62, d);
 
   // caustics: crossing noise fields; the bright net is where they agree
   vec2 cq1 = (p + g * 2.0) * 0.082 + vec2(uTime * 0.030, -uTime * 0.022);
@@ -683,36 +688,20 @@ void main() {
   float cn1 = vnoise(cq1) + 0.5 * vnoise(cq1 * 2.1 + 5.3);
   float cn2 = vnoise(cq2) + 0.5 * vnoise(cq2 * 1.9 + 9.1);
   float caust = pow(clamp(1.0 - abs(cn1 - cn2) * 2.6, 0.0, 1.0), 7.0);
-  caust *= 0.15 + 0.85 * pow(d, 1.5);
+  caust *= 0.15 + 0.85 * pow(clamp(d * 1.6, 0.0, 1.0), 1.5);
   floorCol += uSun * caust * uCaustics;
 
-  // slow diagonal shafts of light
-  float shaft = sin(dot(p, normalize(vec2(-0.55, -0.75))) * 0.035 + uTime * 0.16 + vnoise(p * 0.02) * 2.6);
-  floorCol += uSun * smoothstep(0.82, 1.0, shaft) * 0.03;
+  // slow diagonal shafts of light: one broad, soft band rather than streaks
+  float shaft = sin(dot(p, normalize(vec2(-0.55, -0.75))) * 0.021 + uTime * 0.09 + vnoise(p * 0.02) * 2.6);
+  floorCol += uSun * smoothstep(0.55, 1.0, shaft) * 0.02;
 
-  // --- the bank ---
-  float bankN = vnoise(p * 0.06) * 0.6 + vnoise(p * 0.16 + 3.1) * 0.4;
-  vec3 bankCol = mix(uBankDark, uBank, bankN);
-  bankCol *= 0.9 + vnoise(p * 0.028 + 5.1) * 0.22;
-  bankCol *= 0.94 + vnoise(p * 0.5) * 0.12;
-  float mud = smoothstep(1.05, 1.0, d) * smoothstep(0.94, 1.0, d);
-  bankCol = mix(bankCol, uMudEdge, clamp(mud * 1.1, 0.0, 1.0));
-
-  // a dithered, wobbling waterline
-  float jit = (mod(floor(p.x) + floor(p.y), 2.0) - 0.5) * 0.006;
-  float edge = d - 1.0 + jit + (vnoise(p * 0.25) - 0.5) * 0.012;
-  vec3 col = edge > 0.0 ? bankCol : floorCol;
-
-  // a soft shadow line right under the bank
-  col *= 1.0 - smoothstep(0.94, 1.0, d) * smoothstep(1.04, 1.0, d) * 0.18;
-
-  outColor = vec4(col, 1.0);
+  outColor = vec4(floorCol, 1.0);
 }`;
 
 const WATER_FS = `#version 300 es
 ${GLSL_COMMON}
 uniform sampler2D uUnder;
-uniform float uBend, uMaxBend, uSpecular, uEdgeGlow, uShallowLift, uShallowMix;
+uniform float uBend, uMaxBend, uSpecular, uShallowLift, uShallowMix;
 uniform vec3 uDeepTint;
 uniform vec3 uShallowColor;
 uniform vec2 uLight;
@@ -733,8 +722,8 @@ void main() {
   // middle, shallow at the edges, and a lift where the floor is close
   float rimT = clamp(d, 0.0, 1.0);
   float deepAmt = 1.0 - rimT;
-  float shallowAmt = smoothstep(0.55, 0.95, rimT);
-  col = mix(col, col * uDeepTint, smoothstep(0.05, 0.6, deepAmt) * 0.62 * mask);
+  float shallowAmt = smoothstep(0.34, 0.7, rimT);
+  col = mix(col, col * uDeepTint, smoothstep(0.03, 0.4, deepAmt) * 0.64 * mask);
   // the shallows keep their water colour instead of reading as bare sand
   col = mix(col, mix(col, uShallowColor, uShallowMix), shallowAmt * mask);
   col += vec3(uShallowLift) * shallowAmt * mask;
@@ -743,9 +732,6 @@ void main() {
   vec2 n = normalize(disp + vec2(1e-5, 1e-5));
   float sheen = pow(max(dot(n, normalize(uLight)), 0.0), 4.0);
   col += uSun * sheen * uSpecular * mask * smoothstep(0.4, 1.4, length(disp));
-  // a faint shifting glint where water meets bank
-  float edge = smoothstep(0.82, 0.95, d) * (1.0 - smoothstep(0.97, 1.02, d));
-  col += uSun * edge * uEdgeGlow * (0.55 + 0.45 * vnoise(p * 0.2 + uTime * 0.25));
 
   outColor = vec4(col, 1.0);
 }`;

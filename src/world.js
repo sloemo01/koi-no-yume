@@ -57,7 +57,9 @@ function buildScenery(rand, res, pond) {
     }
   }
 
-  // ---- the bank ----
+  // ---- plants and stones around the frame ----
+  // the bank sits just outside the view, so reeds and grass lean in over the
+  // edge and mossy stones stand in the shallows
   const mossTexs = [];
   for (let i = 0; i < 5; i++) mossTexs.push(TEXTURES.paintMossClump(rand, ["#4e7a34", "#3c6128"]));
   const stoneTexs = [];
@@ -73,71 +75,51 @@ function buildScenery(rand, res, pond) {
   }
 
   for (let i = 0; i < CONFIG.moss.clumps; i++) {
-    const angle = rand.angle();
-    const p = pond.pointAt(angle, rand.range(0.9, 1.08));
+    const p = pond.edgePoint(rand, rand.range(-2, 16));
     const scale = rand.range(0.8, 1.5);
     shore.push({
       tex: rand.pick(mossTexs),
       x: p.x, y: p.y, w: 13 * scale, h: 9 * scale,
-      rot: rand.range(-0.25, 0.25), anchor: "center", layer: 0,
+      rot: rand.range(-0.25, 0.25), anchor: "center", submerged: true,
     });
   }
   for (let i = 0; i < CONFIG.stones.count; i++) {
-    const angle = rand.angle();
-    const p = pond.pointAt(angle, rand.range(0.93, 1.07));
+    const p = pond.edgePoint(rand, rand.range(-8, 12));
     const scale = rand.range(0.75, 1.4);
     shore.push({
       tex: rand.pick(stoneTexs),
       x: p.x, y: p.y, w: 16 * scale, h: 11 * scale,
-      rot: rand.range(-0.3, 0.3), anchor: "center", layer: 0,
+      rot: rand.range(-0.3, 0.3), anchor: "center", submerged: true,
     });
   }
   for (let i = 0; i < CONFIG.reeds.clusters; i++) {
-    const angle = rand.angle();
-    const p = pond.pointAt(angle, rand.range(1.0, 1.09));
-    const scale = rand.range(0.85, 1.3);
+    const p = pond.edgePoint(rand, rand.range(-1, 5));
+    const scale = rand.range(0.85, 1.35);
     shore.push({
       tex: rand.pick(reedTexs),
       x: p.x, y: p.y, w: 13 * scale, h: 16 * scale,
-      rot: rand.range(-0.1, 0.1), anchor: "bottom", layer: 1,
+      rot: rand.range(-0.1, 0.1), anchor: "bottom", submerged: false,
     });
   }
-  let tufts = 0;
-  let guard = 0;
-  while (tufts < CONFIG.tufts.count && guard < CONFIG.tufts.count * 30) {
-    guard++;
-    const x = rand.range(6, res.x - 6);
-    const y = rand.range(6, res.y - 6);
-    if (pond.d(x, y) < 1.03) continue;
-    const scale = rand.range(0.65, 1.35);
+  for (let i = 0; i < CONFIG.tufts.count; i++) {
+    const p = pond.edgePoint(rand, rand.range(-3, 4));
+    const scale = rand.range(0.65, 1.3);
     shore.push({
       tex: rand.pick(tuftTexs),
-      x, y, w: 11 * scale, h: 9 * scale,
-      rot: rand.range(-0.12, 0.12), anchor: "bottom", layer: 1,
+      x: p.x, y: p.y, w: 11 * scale, h: 9 * scale,
+      rot: rand.range(-0.12, 0.12), anchor: "bottom", submerged: false,
     });
-    tufts++;
   }
-  for (let c = 0; c < CONFIG.shoreFlowers.clusters; c++) {
-    let center = null;
-    for (let tries = 0; tries < 30 && !center; tries++) {
-      const x = rand.range(12, res.x - 12);
-      const y = rand.range(12, res.y - 12);
-      if (pond.d(x, y) > 1.05) center = { x, y };
-    }
-    if (!center) continue;
-    const count = rand.int(1, 3);
-    for (let i = 0; i < count; i++) {
-      const scale = rand.range(0.8, 1.25);
-      shore.push({
-        tex: rand.pick(flowerTexs),
-        x: center.x + rand.range(-8, 8),
-        y: center.y + rand.range(-6, 6),
-        w: 7 * scale, h: 10 * scale,
-        rot: rand.range(-0.08, 0.08), anchor: "bottom", layer: 1,
-      });
-    }
+  for (let i = 0; i < CONFIG.shoreFlowers.clusters; i++) {
+    const p = pond.edgePoint(rand, rand.range(-2, 4));
+    const scale = rand.range(0.8, 1.25);
+    shore.push({
+      tex: rand.pick(flowerTexs),
+      x: p.x, y: p.y, w: 7 * scale, h: 10 * scale,
+      rot: rand.range(-0.08, 0.08), anchor: "bottom", submerged: false,
+    });
   }
-  shore.sort((a, b) => a.layer - b.layer);
+  shore.sort((a, b) => (a.submerged === b.submerged ? 0 : a.submerged ? -1 : 1));
 
   // ---- duckweed ----
   const weedTexs = [];

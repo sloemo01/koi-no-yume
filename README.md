@@ -2,7 +2,7 @@
 
 A pixel-art koi pond that runs in the browser. Raw WebGL 2, jQuery for the ripples, MIT licensed. No image files anywhere: every koi, pad, flower and butterfly is painted pixel by pixel at runtime.
 
-Leave it open and the koi drift around on their own, dipping to the cool of the middle and rising to the surface. Click the water and rings spread out, the fish turn and come over to look. Drag a lily pad across the surface and it pushes real waves, then settles back home.
+The water fills the whole frame: no bank in view, just pond, with the floor shelving up toward the edges and the deep sitting under the middle. Leave it open and the koi drift around on their own, dipping to the cool and rising to the surface. Click the water and rings spread out, the fish turn and come over to look. Drag a lily pad across the surface and it pushes real waves, then settles back home.
 
 ![the pond](docs/hero.png)
 
@@ -24,7 +24,7 @@ python3 -m http.server 4173
 
 ## What lives in the pond
 
-Ten nishikigoi looks (kohaku, sanke, showa, shiro utsuri, bekko, tancho, ogon, platinum, asagi, chagoi), and every fish gets its own pattern painted when it spawns, so no two are identical. Tancho stays rare on purpose, one per pond at most. Schools of tiny minnows in four colours that bolt when a koi passes overhead or a ring rolls through them. Butterflies that wander the pond, find a flowering lily, circle it and land. Lily pads in clusters with lotus flowers, moss and stones and reeds and grass tufts and small shore flowers around the waterline, duckweed drifting on the middle, and clouds whose shadows sweep the water.
+Ten nishikigoi looks, each drawn as its own fish rather than one shape recoloured: kohaku and sanke in bold red wraps with sumi spots, showa and shiro utsuri on black, bekko scattered with ink dots, tancho with a single clean crown, ogon and platinum in metal with a sheen down the back, asagi in a blue scale net with orange flanks, chagoi in olive with a fine net. Every pattern is painted when the fish spawns, so no two are identical, and tancho stays rare on purpose at one per pond. Schools of tiny minnows in four colours bolt when a koi passes overhead or a ring rolls through them. Butterflies wander the pond, find a flowering lily, circle it and land. Lily pads float in clusters with lotus flowers on some of them, mossy stones stand in the shallows toward the edges, reeds and grass lean in from just outside the frame, duckweed drifts across the middle, and cloud shadows sweep over everything. There is a sprite sheet at `docs/sprites.html` with all ten koi at 4x if you want to look at them closely.
 
 ## How it works
 

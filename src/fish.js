@@ -36,12 +36,12 @@ class Koi {
     this.index = index;
     this.res = res;
     this.length = Math.round(rand.range(CONFIG.koi.length[0], CONFIG.koi.length[1]));
-    this.height = Math.max(9, Math.round(this.length * 0.3));
     this.variety = pickKoiVariety(rand, tally);
     const sprite = TEXTURES.paintKoi(rand, this.variety, this.length);
     this.canvas = sprite.canvas;
     this.extents = sprite.extents;
     this.spineRow = sprite.spineRow;
+    this.height = sprite.height;
     this.rand = new Rand(CONFIG.seed ^ Math.imul(index + 1, 0x85ebca6b));
 
     this.cruise = rand.range(CONFIG.koi.cruiseSpeed[0], CONFIG.koi.cruiseSpeed[1]);
@@ -165,19 +165,16 @@ class Koi {
       fy += (toY / len) * w;
     }
 
-    // keep off the bank, and give the shoreline a wide berth
-    const pd = pond.d(this.x, this.y);
-    if (pd > 0.72) {
-      const inward = pond.inward(this.x, this.y);
-      const push = (pd - 0.72) * 13;
-      fx += inward.x * push;
-      fy += inward.y * push;
-      if (pd > 0.95) {
-        const f = 0.95 / pd;
-        this.x = pond.cx + (this.x - pond.cx) * f;
-        this.y = pond.cy + (this.y - pond.cy) * f;
-      }
-    }
+    // stay inside the frame: the pond runs past every edge, but a fish that
+    // swims out of the view is simply gone
+    const m = 26;
+    const res = world.res;
+    if (this.x < m) fx += ((m - this.x) / m) * 5.5;
+    if (this.x > res.x - m) fx -= ((this.x - (res.x - m)) / m) * 5.5;
+    if (this.y < m) fy += ((m - this.y) / m) * 5.5;
+    if (this.y > res.y - m) fy -= ((this.y - (res.y - m)) / m) * 5.5;
+    this.x = clamp(this.x, 6, res.x - 6);
+    this.y = clamp(this.y, 6, res.y - 6);
 
     // food: pellets win over everything else
     let pellet = null;
@@ -350,8 +347,7 @@ class Koi {
     }
 
     // a soft wake when swimming fast and near the surface
-    if (this.depth < 0.3 && this.speed > this.cruise * 1.2) {
-      this.wakeClock -= dt;
+    if (this.depth < 0.3 && this.speed > this.cruise * 1.2) {      this.wakeClock -= dt;
       if (this.wakeClock <= 0) {
         this.wakeClock = this.behaviorRange(0.35, 0.7);
         spawnRipple("wake", this.x - Math.cos(this.heading) * this.length * 0.5,
@@ -516,22 +512,14 @@ class MinnowSchool {
     this.x += Math.cos(this.heading) * this.speed * dt;
     this.y += Math.sin(this.heading) * this.speed * dt;
 
-    const pd = pond.d(this.x, this.y);
-    if (pd > 0.8) {
-      const inward = pond.inward(this.x, this.y);
-      const push = (pd - 0.8) * 10;
-      this.heading = Math.atan2(
-        Math.sin(this.heading) + inward.y * push * dt * 6,
-        Math.cos(this.heading) + inward.x * push * dt * 6,
-      );
-      if (pd > 0.88) {
-        const f = 0.88 / pd;
-        this.x = pond.cx + (this.x - pond.cx) * f;
-        this.y = pond.cy + (this.y - pond.cy) * f;
-        this.state = "cruise";
-        this.timer = this.rand.range(1, 3);
-      }
-    }
+    const res = world.res;
+    const m = 22;
+    if (this.x < m) this.heading = angleToward(this.heading, 0, 4 * dt);
+    if (this.x > res.x - m) this.heading = angleToward(this.heading, Math.PI, 4 * dt);
+    if (this.y < m) this.heading = angleToward(this.heading, Math.PI / 2, 4 * dt);
+    if (this.y > res.y - m) this.heading = angleToward(this.heading, -Math.PI / 2, 4 * dt);
+    this.x = clamp(this.x, 8, res.x - 8);
+    this.y = clamp(this.y, 8, res.y - 8);
 
     // the school keeps its heading; slots only lean the nose, or every
     // member points somewhere different and the school reads as debris

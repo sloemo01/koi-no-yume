@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>pond sprite sheet</title>
+<style>
+  body { margin: 0; background: #24484f; color: #dfe8e6; font: 11px "SF Mono", Menlo, monospace; }
+  .pad { padding: 10px; }
+  h1 { font-size: 12px; font-weight: 600; letter-spacing: 0.06em; margin: 6px 0 6px; color: #ffd9a0; }
+  canvas { display: block; image-rendering: pixelated; margin-bottom: 10px; }
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+<div class="pad">
+  <h1>koi 1-5 (4x)</h1>
+  <canvas id="koiA"></canvas>
+  <h1>koi 6-10 (4x)</h1>
+  <canvas id="koiB"></canvas>
+  <h1>lily pads + lotus (4x)</h1>
+  <canvas id="pads"></canvas>
+  <h1>minnows, butterflies, shore (6x)</h1>
+  <canvas id="small"></canvas>
+</div>
+<script src="../src/util.js"></script>
+<script src="../src/config.js"></script>
+<script src="../src/textures.js"></script>
+<script>
+  const only = new URLSearchParams(location.search).get("only");
+  const show = (id) => !only || only.split(",").includes(id);
+  const scale = 4;
+
+  function koiCanvas(id, varieties) {
+    const el = document.getElementById(id);
+    if (!show(id)) { el.classList.add("hidden"); return; }
+    const perVariety = 3;
+    const lens = [30, 38, 46];
+    const labelW = 62, rowH = 20, gap = 4;
+    el.width = (labelW + perVariety * (52 + 10)) * scale;
+    el.height = (varieties.length * (rowH + gap) + 14) * scale;
+    const ctx = el.getContext("2d");
+    ctx.imageSmoothingEnabled = false;
+    ctx.fillStyle = "#2b5560";
+    ctx.fillRect(0, 0, el.width, el.height);
+    ctx.font = "8px Menlo, monospace";
+    let y = 8;
+    for (const v of varieties) {
+      ctx.fillStyle = "#cfdcd9";
+      ctx.fillText(v, 3 * scale, (y + 9) * scale);
+      for (let k = 0; k < perVariety; k++) {
+        const rand = new Rand(CONFIG.seed ^ Math.imul(v.length * 31 + k, 0x9e3779b1));
+        const s = TEXTURES.paintKoi(rand, v, lens[k]);
+        ctx.drawImage(s.canvas, (labelW + k * 62) * scale, y * scale, s.canvas.width * scale, s.canvas.height * scale);
+      }
+      y += rowH + gap;
+    }
+  }
+
+  koiCanvas("koiA", ["kohaku", "sanke", "showa", "utsuri", "bekko"]);
+  koiCanvas("koiB", ["tancho", "ogon", "platinum", "asagi", "chagoi"]);
+
+  if (show("pads")) {
+    const padCanvas = document.getElementById("pads");
+    const items = [];
+    for (let k = 0; k < 5; k++) {
+      const rand = new Rand(CONFIG.seed ^ Math.imul(k + 1, 0x27d4eb2f));
+      items.push({ tex: TEXTURES.paintLilyPad(rand, [16, 22, 28, 34, 34][k]), s: 34 });
+    }
+    for (const colorway of ["pink", "white", "red"]) {
+      const rand = new Rand(CONFIG.seed ^ Math.imul(colorway.length, 0x85ebca6b));
+      items.push({ tex: TEXTURES.paintLotusFlower(rand, colorway, 22), s: 34 });
+    }
+    padCanvas.width = (items.length * 42 + 10) * scale;
+    padCanvas.height = 44 * scale;
+    const ctx = padCanvas.getContext("2d");
+    ctx.imageSmoothingEnabled = false;
+    ctx.fillStyle = "#2b5560";
+    ctx.fillRect(0, 0, padCanvas.width, padCanvas.height);
+    let x = 6;
+    for (const it of items) {
+      ctx.drawImage(it.tex, x * scale, 6 * scale, it.tex.width * scale, it.tex.height * scale);
+      x += 42;
+    }
+  } else document.getElementById("pads").classList.add("hidden");
+
+  if (show("small")) {
+    const sc = document.getElementById("small");
+    const smallScale = 6;
+    const items = [];
+    for (const v of Object.keys(TEXTURES.MINNOW_VARIANTS)) {
+      items.push(TEXTURES.paintMinnow(new Rand(CONFIG.seed ^ v.length), v).canvas);
+    }
+    for (const pal of CONFIG.butterflies.palettes) {
+      const rand = new Rand(CONFIG.seed ^ pal.wing.length);
+      items.push(TEXTURES.paintButterfly(rand, pal, 1));
+      items.push(TEXTURES.paintButterflyRest(rand, pal));
+    }
+    items.push(TEXTURES.paintMossClump(new Rand(3), ["#4e7a34", "#3c6128"]));
+    items.push(TEXTURES.paintStone(new Rand(4)));
+    items.push(TEXTURES.paintGrassTuft(new Rand(5), ["#5d8f3a", "#4a7a2e"]));
+    items.push(TEXTURES.paintReedClump(new Rand(6)));
+    items.push(TEXTURES.paintShoreFlower(new Rand(7), "blue"));
+    items.push(TEXTURES.paintDuckweed(new Rand(8)));
+    let w = 10, h = 24;
+    for (const it of items) { w += it.width * smallScale + 8; h = Math.max(h, it.height * smallScale + 24); }
+    sc.width = w;
+    sc.height = h;
+    const sctx = sc.getContext("2d");
+    sctx.imageSmoothingEnabled = false;
+    sctx.fillStyle = "#2b5560";
+    sctx.fillRect(0, 0, sc.width, sc.height);
+    let sx = 5;
+    for (const it of items) {
+      sctx.drawImage(it, sx, 12, it.width * smallScale, it.height * smallScale);
+      sx += it.width * smallScale + 8;
+    }
+  } else document.getElementById("small").classList.add("hidden");
+</script>
+</body>
+</html>
