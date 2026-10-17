@@ -836,6 +836,12 @@ function probeRipple(kind, x, y, n) {
 
 // a ripple whose progress stops dead is a stalled jQuery job, not a slow wave
 function probeTick() {
+  // the grab self test runs itself once, shortly after the first frames, and
+  // puts a red banner on screen with the numbers if anything is off
+  if (!PROBE.selfTested && Pond.world.time > 1.5) {
+    PROBE.selfTested = true;
+    grabSelfTest();
+  }
   probeReadout();
   const held = Pond.state.dragPad;
   if (held && Pond.world.time - (PROBE.lastDivT || 0) > 0.4) {
