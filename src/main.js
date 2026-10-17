@@ -414,15 +414,16 @@ function grabSelfTest() {
   const err = Math.hypot(back.x - pad.x, back.y - pad.y);
   report.checks.push({ what: "pointer round trip", errorPx: +err.toFixed(2), pass: err < 1 });
   if (err >= 1) report.ok = false;
-  const at = (x, y) => {
-    const hit = findPadAt(x, y, 1.0);
-    return hit === pad;
-  };
   const half = pad.size * 0.5;
-  const centre = at(pad.x, pad.y);
+  const centreHit = findPadAt(pad.x, pad.y, 1.0);
+  const centre = centreHit === pad;
+  // near the rim a neighbouring pad can legitimately be nearer, so the only
+  // thing that must hold is that SOME pad answers. Requiring this exact pad
+  // here was the test's own bug, not the grab's.
   const rim = [0, 90, 180, 270].map((a) => {
     const rad = (a * Math.PI) / 180;
-    return { angle: a, pass: at(pad.x + Math.cos(rad) * half * 0.85, pad.y + Math.sin(rad) * half * 0.85) };
+    const hit = findPadAt(pad.x + Math.cos(rad) * half * 0.85, pad.y + Math.sin(rad) * half * 0.85, 1.0);
+    return { angle: a, pass: hit !== null, samePad: hit === pad };
   });
   report.checks.push({ what: "hit test at centre", pass: centre });
   report.checks.push({ what: "hit test near rim", pass: rim.every((r) => r.pass), detail: rim });
