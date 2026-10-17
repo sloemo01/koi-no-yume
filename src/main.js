@@ -840,6 +840,13 @@ function installInput(canvas) {
     }
     handlePointerDown(p.x, p.y);
     if (st.dragPad) {
+      // say so out loud: the pad lifts a little and the water answers, so a
+      // tap or a still hold is not silently ignored
+      st.dragPad.lift = 1;
+      spawnRipple("splash", st.dragPad.x, st.dragPad.y, { scale: 0.55 });
+      Sound.plop(0.35);
+    }
+    if (st.dragPad) {
       // anchor the drag in screen space: where the pad is on screen and where
       // the cursor is. From here the pad moves by the cursor's screen delta,
       // so no world-space convention can turn the movement against your hand.
@@ -1139,7 +1146,10 @@ function drawFrame() {
     gfx.drawSprite(pad.tex, pad.x + so[0], pad.y + so[1] + bob * 0.5, pad.size * 0.99, pad.size * 0.96, pad.rot,
       [SHADOW_TINT[0], SHADOW_TINT[1], SHADOW_TINT[2], CONFIG.shadows.padAlpha], false);
     const s = pad.shade;
-    gfx.drawSprite(pad.tex, pad.x, pad.y + bob, pad.size, pad.size, pad.rot, [s, s, s, 1], false);
+    const lift = pad.lift || 0;
+    const scale = 1 + lift * 0.09;
+    gfx.drawSprite(pad.tex, pad.x, pad.y + bob - lift * 1.5, pad.size * scale, pad.size * scale, pad.rot, [s, s, s, 1], false);
+    pad.lift = lift > 0 ? Math.max(0, lift - 0.055) : 0;
   }
   for (const f of scenery.padFlowers) {
     const bob = waterBobAt(f.pad.x, f.pad.y, time) * 0.6;
