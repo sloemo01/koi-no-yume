@@ -484,6 +484,7 @@ function handlePointerMove(x, y) {
     const pad = st.dragPad;
     const nx = clamp(x + pad.grabX, 4, world.res.x - 4);
     const ny = clamp(y + pad.grabY, 4, world.res.y - 4);
+    probeDragSample(st.pointerCss ? st.pointerCss[0] : pad.x, st.pointerCss ? st.pointerCss[1] : pad.y, x, y, pad);
     const moved = Math.hypot(nx - pad.x, ny - pad.y);
     pad.x = nx;
     pad.y = ny;
@@ -709,6 +710,48 @@ function probeTick() {
   }
 }
 
+function probeDragStart(cssX, cssY, worldX, worldY, pad) {
+  PROBE.drag = {
+    t: +Pond.world.time.toFixed(2),
+    grabCss: [Math.round(cssX), Math.round(cssY)],
+    grabWorld: [+worldX.toFixed(1), +worldY.toFixed(1)],
+    padStart: [+pad.x.toFixed(1), +pad.y.toFixed(1)],
+    padKindR: pad.r,
+    samples: [],
+    end: null,
+  };
+  PROBE.counters.drags = (PROBE.counters.drags || 0) + 1;
+}
+
+function probeDragSample(cssX, cssY, worldX, worldY, pad) {
+  const d = PROBE.drag;
+  if (!d || d.samples.length > 40) return;
+  d.samples.push({
+    css: [Math.round(cssX), Math.round(cssY)],
+    world: [+worldX.toFixed(1), +worldY.toFixed(1)],
+    pad: [+pad.x.toFixed(1), +pad.y.toFixed(1)],
+  });
+}
+
+function probeDragEnd() {
+  const d = PROBE.drag;
+  if (!d) return;
+  d.end = { t: +Pond.world.time.toFixed(2) };
+  const px = Pond.state.pixelSize;
+  if (d.samples.length > 1) {
+    const first = d.samples[0];
+    const last = d.samples[d.samples.length - 1];
+    const cursorDown = last.css[1] - first.css[1];
+    const padDown = (last.pad[1] - first.pad[1]) * px;
+    d.cursorMoved = cursorDown;
+    d.padMovedOnScreen = +padDown.toFixed(1);
+    d.sameDirection = Math.sign(cursorDown) === Math.sign(padDown) || Math.abs(cursorDown) < 4;
+    const dist = Math.hypot(d.grabWorld[0] - d.padStart[0], d.grabWorld[1] - d.padStart[1]);
+    d.grabbedTheRightPad = dist <= d.padKindR + 3;
+    d.grabDistance = +dist.toFixed(1);
+  }
+}
+
 function probeMismatch(kind, x, y) {
   const last = PROBE.clicks[PROBE.clicks.length - 1];
   if (!last || last.kind !== "water") return;
@@ -731,6 +774,19 @@ function probeReport() {
     lastTouches: tail(PROBE.ripples.filter((r) => r.kind === "touch" || r.kind === "splash"), 6).map((r) => ({
       kind: r.kind, world: r.world, n: r.n, maxRadius: r.maxRadius, advanced: r.advancing, stuck: r.stuck, done: r.done,
     })),
+    lastDrag: PROBE.drag && PROBE.drag.samples.length
+      ? {
+        grabCss: PROBE.drag.grabCss, grabWorld: PROBE.drag.grabWorld, padStart: PROBE.drag.padStart,
+        samples: PROBE.drag.samples.length > 10
+          ? PROBE.drag.samples.filter((_, i) => i % Math.ceil(PROBE.drag.samples.length / 10) === 0)
+          : PROBE.drag.samples,
+        cursorMovedOnScreen: PROBE.drag.cursorMoved,
+        padMovedOnScreen: PROBE.drag.padMovedOnScreen,
+        sameDirection: PROBE.drag.sameDirection,
+        grabbedTheRightPad: PROBE.drag.grabbedTheRightPad,
+        grabDistance: PROBE.drag.grabDistance,
+      }
+      : null,
     mismatches: tail(PROBE.mismatches, 8),
     stuck: tail(PROBE.stuck, 8),
   };
@@ -758,10 +814,12 @@ function installInput(canvas) {
     handlePointerDown(p.x, p.y);
     probeClick(st.dragPad ? "grab" : "water", ev.clientX, ev.clientY, p.x, p.y,
       st.dragPad ? { grabbed: [+st.dragPad.x.toFixed(1), +st.dragPad.y.toFixed(1)] } : {});
+    if (st.dragPad) probeDragStart(ev.clientX, ev.clientY, p.x, p.y, st.dragPad);
   });
   $(window).on("pointermove", (ev) => {
     if (!st.pointer.down) return;
     const p = pointerPos(canvas, ev.clientX, ev.clientY);
+    st.pointerCss = [Math.round(ev.clientX), Math.round(ev.clientY)];
     handlePointerMove(p.x, p.y);
   });
   $(window).on("pointerup pointercancel blur", (ev) => {
@@ -770,6 +828,7 @@ function installInput(canvas) {
       const up = pointerPos(document.getElementById("pond"), ev.clientX, ev.clientY);
       last.up = [+up.x.toFixed(1), +up.y.toFixed(1)];
     }
+    probeDragEnd();
     handlePointerUp();
   });
 
