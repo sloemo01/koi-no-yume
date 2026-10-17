@@ -217,6 +217,7 @@ function boot() {
         v: +k.speed.toFixed(2), state: k.state, variety: k.variety,
       })),
     padIndexOf: (pad) => padIndexOf(pad),
+    hitGrid: (i, step, span) => hitGrid(i, step || 3, span || 36),
     selectedPad: () => (Pond.state.selPad
       ? { x: +Pond.state.selPad.x.toFixed(1), y: +Pond.state.selPad.y.toFixed(1), r: Pond.state.selPad.r }
       : null),
@@ -365,12 +366,39 @@ function screenToWorld(canvas, ev) {
   };
 }
 
+// THE one screen-to-world conversion. Everything that needs to know where the
+// pointer is uses this, and it takes its scale from the same world resolution
+// the renderer draws with, so the two cannot disagree. The old version mixed
+// the canvas rectangle's ratio with raw canvas pixels and never divided by the
+// pixel size; it only worked when the backing store happened to equal the CSS
+// size, which is exactly the kind of accident that hides for hours.
 function pointerPos(canvas, x, y) {
   const rect = canvas.getBoundingClientRect();
+  const res = (Pond.world && Pond.world.res) || { x: canvas.width, y: canvas.height };
+  const k = res.x / rect.width;
   return {
-    x: ((x - rect.left) / rect.width) * canvas.width,
-    y: ((y - rect.top) / rect.height) * canvas.height,
+    x: (x - rect.left) * k,
+    y: (y - rect.top) * k,
   };
+}
+
+// A live map of where a pad answers to a press, point by point, so the grab
+// area can be compared against the paint instead of assumed.
+function hitGrid(padIndex, step, span) {
+  const pads = Pond.scenery.pads;
+  const pad = pads[padIndex];
+  if (!pad) return null;
+  const out = { pad: padIndex, size: pad.size, r: pad.r, step: step, cells: [] };
+  for (let dy = -span; dy <= span; dy += step) {
+    let row = "";
+    for (let dx = -span; dx <= span; dx += step) {
+      const hit = findPadAt(pad.x + dx, pad.y + dy, 1.0) === pad;
+      row += hit ? "#" : ".";
+    }
+    out.cells.push(row);
+  }
+  out.note = "# means a press here takes this pad";
+  return out;
 }
 
 function handleWaterClick(x, y) {
