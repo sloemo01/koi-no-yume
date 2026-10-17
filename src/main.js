@@ -216,6 +216,9 @@ function boot() {
         x: +k.x.toFixed(1), y: +k.y.toFixed(1), d: +k.depth.toFixed(2),
         v: +k.speed.toFixed(2), state: k.state, variety: k.variety,
       })),
+    selectedPad: () => (Pond.state.selPad
+      ? { x: +Pond.state.selPad.x.toFixed(1), y: +Pond.state.selPad.y.toFixed(1), r: Pond.state.selPad.r }
+      : null),
     probes: () => probeReport(),
     clearProbes: () => probeClear(),
     probeToggle: () => {
@@ -614,6 +617,32 @@ function handleKey(key) {
     return true;
   }
   if (key === "p") return Pond.__probeToggle();
+  // keyboard pad control: no pointer involved, so nothing on screen can
+  // intercept it
+  if (key === "," || key === ".") {
+    const pads = Pond.scenery.pads;
+    if (!pads.length) return true;
+    let i = pads.indexOf(st.selPad);
+    i = i < 0 ? 0 : (i + (key === "." ? 1 : -1) + pads.length) % pads.length;
+    st.selPad = pads[i];
+    Sound.plop(0.25);
+    return true;
+  }
+  if (key.indexOf("Arrow") === 0) {
+    const pad = st.selPad || Pond.scenery.pads[0];
+    if (!pad) return false;
+    const step = 2;
+    if (key === "ArrowLeft") pad.x = clamp(pad.x - step, 4, Pond.world.res.x - 4);
+    if (key === "ArrowRight") pad.x = clamp(pad.x + step, 4, Pond.world.res.x - 4);
+    if (key === "ArrowUp") pad.y = clamp(pad.y - step, 4, Pond.world.res.y - 4);
+    if (key === "ArrowDown") pad.y = clamp(pad.y + step, 4, Pond.world.res.y - 4);
+    pad.homeX = pad.x;
+    pad.homeY = pad.y;
+    pad.driftX = 0;
+    pad.driftY = 0;
+    st.selPad = pad;
+    return true;
+  }
   if (key === "h") {
     st.hidden = !st.hidden;
     $(".hud").toggleClass("hidden", st.hidden);
@@ -1163,7 +1192,7 @@ function drawFrame() {
       [SHADOW_TINT[0], SHADOW_TINT[1], SHADOW_TINT[2], CONFIG.shadows.padAlpha], false);
     // hover and grab read as light, never as size: a pad is always exactly
     // pad.size, it just catches more sun when your pointer is on it
-    const hovered = Pond.state.hoverPad === pad;
+    const hovered = Pond.state.hoverPad === pad || Pond.state.selPad === pad;
     const held = Pond.state.dragPad === pad;
     const glow = (hovered ? 0.5 : 0) + (held ? 0.5 : 0);
     const s = pad.shade * (1 + glow * 0.22);
