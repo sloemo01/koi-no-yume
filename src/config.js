@@ -58,6 +58,8 @@ const CONFIG = {
   },
 
   pads: {
+    // lily pads are scenery: nothing grabs them, nothing highlights them
+    grabbable: false,
     clusters: [3, 4],
     perCluster: [2, 3],
     size: [24, 48],

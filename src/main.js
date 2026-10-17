@@ -414,6 +414,11 @@ function pointerPos(canvas, x, y) {
 // fails it says so on screen with the numbers, because a silent coordinate
 // mismatch is what ate a whole day of this.
 function grabSelfTest() {
+  if (!CONFIG.pads.grabbable) {
+    const el = document.getElementById("grab-warning");
+    if (el) el.remove();
+    return { ok: true, checks: ["grabbing is off: pads are scenery"] };
+  }
   const canvas = document.getElementById("pond");
   const pads = Pond.scenery.pads;
   const report = { ok: true, checks: [] };
@@ -557,6 +562,9 @@ function padBobAt(pad, time) {
 
 // slack is how forgiving the grab is: 1 is the pad's own disc
 function findPadAt(x, y, slack) {
+  // one switch, and the whole grab apparatus is off: press, hover, sweep,
+  // drag and the keyboard nudge all go through here or check this flag
+  if (!CONFIG.pads.grabbable) return null;
   const reach = slack === undefined ? 1.05 : slack;
   const pads = Pond.scenery.pads;
   let best = null;
@@ -724,6 +732,7 @@ function handleKey(key) {
   if (key === "p") return Pond.__probeToggle();
   // keyboard pad control: no pointer involved, so nothing on screen can
   // intercept it
+  if (!CONFIG.pads.grabbable) return false;
   if (key === "," || key === ".") {
     const pads = Pond.scenery.pads;
     if (!pads.length) return true;
@@ -1109,7 +1118,6 @@ function installInput(canvas) {
       // so no world-space convention can turn the movement against your hand.
       st.lastDragCss = [ev.clientX, ev.clientY];
     }
-    markPointer(ev.clientX, ev.clientY);
     probeTrace("down", ev.clientX, ev.clientY, st.dragPad
       ? { hit: "pad " + padIndexOf(st.dragPad), grabDistance: +Math.hypot(st.dragPad.x - p.x, st.dragPad.y - p.y).toFixed(1) }
       : { hit: "water" });
@@ -1121,7 +1129,6 @@ function installInput(canvas) {
     // where the real pointer actually is, so a pad can light up under it. With
     // a big cursor-following pet on screen this is the only honest readout of
     // your pointer position.
-    markPointer(ev.clientX, ev.clientY);
     // counted before any early return: this is the number that says whether
     // this page is seeing your pointer at all
     PROBE.counters.moves = (PROBE.counters.moves || 0) + 1;
@@ -1152,7 +1159,6 @@ function installInput(canvas) {
     if (!st.pointer.down && !st.dragPad) return;
     const p = pointerPos(canvas, ev.clientX, ev.clientY);
     st.pointerCss = [Math.round(ev.clientX), Math.round(ev.clientY)];
-    markPointer(ev.clientX, ev.clientY);
     if (st.dragPad) {
       probeTrace("move (held)", ev.clientX, ev.clientY, { pad: padIndexOf(st.dragPad), padModelAt: [+st.dragPad.x.toFixed(1), +st.dragPad.y.toFixed(1)] });
     }
