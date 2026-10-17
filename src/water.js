@@ -33,8 +33,13 @@ function spawnRipple(kind, x, y, opts) {
   const scale = (opts && opts.scale) || 1;
   for (let i = 0; i < rings; i++) {
     if (WATER_FIELD.rings.length >= CONFIG.ripples.maxActive) {
-      // recycle the oldest
-      const oldest = WATER_FIELD.rings.reduce((a, b) => (a.p > b.p ? a : b));
+      // Fish and pads fill the ring budget with wake rings, and recycling the
+      // oldest used to take click ripples with it, so a click could be gone
+      // before it had finished expanding. Evict wakes first; a touch or a
+      // splash is only taken if there is nothing else left.
+      const wakeOnly = WATER_FIELD.rings.filter((r) => r.kind !== "touch" && r.kind !== "splash");
+      const source = wakeOnly.length ? wakeOnly : WATER_FIELD.rings;
+      const oldest = source.reduce((a, b) => (a.p > b.p ? a : b));
       releaseRing(oldest);
       const idx = WATER_FIELD.rings.indexOf(oldest);
       if (idx >= 0) WATER_FIELD.rings.splice(idx, 1);

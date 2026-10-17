@@ -337,7 +337,10 @@ function screenToWorld(canvas, ev) {
   const ch = canvas.height;
   return {
     x: ((ev.clientX - rect.left) / rect.width) * cw,
-    y: ((ev.clientY - rect.top) / rect.height) * ch,
+    // the scene is drawn in framebuffer space, where y climbs from the bottom,
+    // so screen y flips on the way into world space. Without this flip a click
+    // at the bottom of the pond ripples at the top.
+    y: ch - ((ev.clientY - rect.top) / rect.height) * ch,
   };
 }
 
@@ -345,7 +348,10 @@ function pointerPos(canvas, x, y) {
   const rect = canvas.getBoundingClientRect();
   return {
     x: ((x - rect.left) / rect.width) * canvas.width,
-    y: ((y - rect.top) / rect.height) * canvas.height,
+    // The scene is drawn the way a framebuffer stores it, with y climbing from
+    // the bottom, so screen y has to flip on the way into world space. Without
+    // this a click at the bottom of the pond ripples at the top of it.
+    y: canvas.height - ((y - rect.top) / rect.height) * canvas.height,
   };
 }
 
@@ -649,7 +655,8 @@ function probeRipple(kind, x, y, n) {
     // the click that caused this ripple should be the one right before it
     const mismatch = !!(last && last.kind === "water"
       && Math.hypot(last.world[0] - x, last.world[1] - y) > 2);
-    probeMark(x * px, y * px, mismatch ? "rgba(255,90,90,.95)" : "rgba(140,255,170,.9)");
+    const cssY = (Pond.world.res.y - y) * px;
+    probeMark(x * px, cssY, mismatch ? "rgba(255,90,90,.95)" : "rgba(140,255,170,.9)");
   }
   return rec;
 }
@@ -664,17 +671,27 @@ function probeTick() {
       rec.done = true;
       continue;
     }
-    let p = 0;
+    let advanced = false;
+    let stalled = false;
     for (const r of live) {
-      if (r.p > p) p = r.p;
       if (r.radius > rec.maxRadius) rec.maxRadius = +r.radius.toFixed(1);
+      if (!r.armed) continue;                  // still waiting out its stagger
+      if (r.probeP === undefined) r.probeP = -1;
+      if (r.p > r.probeP + 0.0004) {
+        advanced = true;
+        r.probeP = r.p;
+        r.probeStill = 0;
+      } else {
+        r.probeStill = (r.probeStill || 0) + 1;
+        // half a second of frames without the ring moving at all is a stall
+        if (r.probeStill > 30) stalled = true;
+      }
     }
-    rec.advancing = p > rec.maxP + 0.0005;
-    rec.maxP = Math.max(rec.maxP, p);
-    if (!rec.advancing && Pond.world.time - rec.t > 0.45 && !rec.stuck) {
+    rec.advancing = advanced;
+    if (stalled && !rec.stuck) {
       rec.stuck = true;
       PROBE.counters.stuck++;
-      probePush(PROBE.stuck, { kind: rec.kind, world: rec.world, at: rec.t });
+      probePush(PROBE.stuck, { kind: rec.kind, world: rec.world, at: rec.t, radius: rec.maxRadius });
     }
   }
 }
@@ -697,6 +714,9 @@ function probeReport() {
     lastClicks: tail(PROBE.clicks, 8),
     lastRipples: tail(PROBE.ripples, 8).map((r) => ({
       kind: r.kind, world: r.world, n: r.n, maxRadius: r.maxRadius, advanced: r.advancing, stuck: r.stuck,
+    })),
+    lastTouches: tail(PROBE.ripples.filter((r) => r.kind === "touch" || r.kind === "splash"), 6).map((r) => ({
+      kind: r.kind, world: r.world, n: r.n, maxRadius: r.maxRadius, advanced: r.advancing, stuck: r.stuck, done: r.done,
     })),
     mismatches: tail(PROBE.mismatches, 8),
     stuck: tail(PROBE.stuck, 8),
@@ -734,7 +754,8 @@ function installInput(canvas) {
   $(window).on("pointerup pointercancel blur", (ev) => {
     const last = PROBE.clicks[PROBE.clicks.length - 1];
     if (last && ev && ev.clientX !== undefined && !last.up) {
-      last.up = [+(ev.clientX / Pond.state.pixelSize).toFixed(1), +(ev.clientY / Pond.state.pixelSize).toFixed(1)];
+      const up = pointerPos(document.getElementById("pond"), ev.clientX, ev.clientY);
+      last.up = [+up.x.toFixed(1), +up.y.toFixed(1)];
     }
     handlePointerUp();
   });

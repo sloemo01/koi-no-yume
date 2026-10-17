@@ -100,7 +100,7 @@ const CONFIG = {
       distortion: 4.2, sharpness: 0.42, fadeStart: 0.36, decay: 0.4,
       initialStrength: 0.9,
     },
-    maxActive: 32,
+    maxActive: 44,
   },
 
   // the water surface pass: whole-pixel refraction of everything below
