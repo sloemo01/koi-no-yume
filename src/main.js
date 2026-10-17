@@ -174,6 +174,20 @@ function boot() {
   }
 
   installInput(canvas);
+
+  // paint one frame synchronously: a tab that is not visible yet gets no
+  // animation frames, and the pond must not be blank when it is looked at
+  drawFrame();
+  $(document).on("visibilitychange", () => {
+    if (!document.hidden) {
+      lastFrame = 0;
+      drawFrame();
+    }
+  });
+  $(window).on("focus", () => {
+    lastFrame = 0;
+    drawFrame();
+  });
   requestAnimationFrame(frame);
 
   window.__pond = {
