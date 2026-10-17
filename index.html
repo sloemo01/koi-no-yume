@@ -35,7 +35,8 @@
     transition: opacity 0.5s ease;
   }
   .hud.hidden { opacity: 0; pointer-events: none; }
-  #hint {
+  /* the instructions must never eat a press meant for a pad */
+  #hint { pointer-events: none; }
     left: 14px; bottom: 12px;
   }
   #hint b { color: #ffd9a0; font-weight: 600; }
