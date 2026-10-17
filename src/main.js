@@ -456,10 +456,11 @@ function findPadAt(x, y, slack) {
   for (const pad of pads) {
     const py = pad.y + padBobAt(pad, Pond.world.time);
     const d = Math.hypot(pad.x - x, py - y);
-    // the painted blade reaches about 1.75x the physics radius, so the grab
-    // area has to match what you can SEE: hovering or pressing the outer half
-    // of a lily pad used to do nothing at all
-    if (d <= pad.r * 1.75 + 3 && d < bestD) {
+    // the sprite is drawn pad.size wide, so the pad you see reaches size/2 in
+    // every direction. The physics radius is about a third of that, which is
+    // why pressing the outer half of a lily pad did nothing: the grab area was
+    // a small dot in the middle of it. This is the drawn extent, plus three.
+    if (d <= pad.size * 0.5 + 3 && d < bestD) {
       best = pad;
       bestD = d;
     }
