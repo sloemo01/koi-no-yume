@@ -370,23 +370,16 @@ function fit(initial) {
       }
     }
   }
-  if (Pond.school) buildSceneryFor(world);
+  // build the scenery once. Rebuilding it on every resize re-rolled the random
+  // generator, so all the pads jumped to brand new spots each time the window
+  // changed size: you would aim at a pad you could still see and press water.
+  if (Pond.school && !Pond.__sceneryBuilt) {
+    Pond.__sceneryBuilt = true;
+    buildSceneryFor(world);
+  }
 }
 
 // ------------------------------------------------------------------ input
-
-function screenToWorld(canvas, ev) {
-  const rect = canvas.getBoundingClientRect();
-  const cw = canvas.width;
-  const ch = canvas.height;
-  return {
-    x: ((ev.clientX - rect.left) / rect.width) * cw,
-    // the scene is drawn in framebuffer space, where y climbs from the bottom,
-    // so screen y flips on the way into world space. Without this flip a click
-    // at the bottom of the pond ripples at the top.
-    y: ch - ((ev.clientY - rect.top) / rect.height) * ch,
-  };
-}
 
 // THE one screen-to-world conversion. Everything that needs to know where the
 // pointer is uses this, and it takes its scale from the same world resolution
