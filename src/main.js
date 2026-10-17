@@ -436,16 +436,23 @@ function feed(x, y) {
   Sound.plop(0.6);
 }
 
-// slack is how forgiving the grab is: 1 is the pad's own disc, more than that
-// reaches past it. Pressing anywhere on a pad, or just off its edge, takes it.
+// Where a pad actually is on screen includes its bob. Drawing and grabbing must
+// use the same number, and the bob is capped so the two can never drift apart
+// into a big invisible grab area next to the pad you can see.
+function padBobAt(pad, time) {
+  return clamp(waterBobAt(pad.x, pad.y, time) * 0.6, -1.2, 1.2);
+}
+
+// slack is how forgiving the grab is: 1 is the pad's own disc
 function findPadAt(x, y, slack) {
-  const reach = slack === undefined ? 2.2 : slack;
+  const reach = slack === undefined ? 1.05 : slack;
   const pads = Pond.scenery.pads;
   let best = null;
   let bestD = 1e9;
   for (const pad of pads) {
-    const d = Math.hypot(pad.x - x, pad.y - y);
-    if (d < pad.r * reach + 8 && d < bestD) {
+    const py = pad.y + padBobAt(pad, Pond.world.time);
+    const d = Math.hypot(pad.x - x, py - y);
+    if (d < pad.r * reach + 4 && d < bestD) {
       best = pad;
       bestD = d;
     }
@@ -453,8 +460,9 @@ function findPadAt(x, y, slack) {
   // the green mats floating on the surface look like small pads, so they grab
   // like pads: anything that reads as a pad should move when it is pulled
   for (const mo of Pond.scenery.surfaceMoss) {
-    const d = Math.hypot(mo.x - x, mo.y - y);
-    if (d < mo.size * 0.45 * reach + 5 && d < bestD) {
+    const my = mo.y + clamp(waterBobAt(mo.x, mo.y, Pond.world.time) * 0.5, -1, 1);
+    const d = Math.hypot(mo.x - x, my - y);
+    if (d < mo.size * 0.45 * reach + 4 && d < bestD) {
       best = mo;
       bestD = d;
     }
@@ -513,7 +521,7 @@ function handlePointerMove(x, y) {
   // a drag is in flight and a pad is under the pointer: take it. If a grab
   // ever gets lost, the pad must not start moving against your hand; instead
   // the pointer keeps hold of whatever pad it is over.
-  const under = findPadAt(x, y, 3.0);
+  const under = findPadAt(x, y, 1.3);
   if (under) {
     under.held = true;
     under.grabX = under.x - x;
@@ -1141,7 +1149,7 @@ function drawFrame() {
     gfx.drawSprite(s.tex, s.x, y, s.w, s.h, s.rot, [1, 1, 1, 1], false);
   }
   for (const pad of scenery.pads) {
-    const bob = waterBobAt(pad.x, pad.y, time) * 0.6;
+    const bob = padBobAt(pad, time);
     const so = shadowOffset(3.2);
     // one pass, drawn together, so nothing can separate them
     gfx.drawSprite(pad.tex, pad.x + so[0], pad.y + so[1] + bob * 0.5, pad.size * 0.99, pad.size * 0.96, pad.rot,
