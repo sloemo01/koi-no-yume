@@ -143,15 +143,20 @@ const CONFIG = {
 
   caustics: { amp: 0.115 },
   sun: {
-    dir: [-0.5, -0.78],
+    // Shader space climbs from the bottom of the frame, so +y here means up
+    // on screen: the sun sits upper left, which is why everything casts its
+    // shadow down and to the right.
+    dir: [-0.5, 0.78],
     color: [1.0, 0.97, 0.86],
   },
   bloom: { threshold: 0.9, gain: 1.3, strength: 0.42 },
   vignette: 0.24,
 
   shadows: {
-    // one light direction for everything: the shadow falls away from the sun
-    dir: [0.54, 0.84],
+    // one light direction for everything, away from the sun: down and to the
+    // right on screen. World y climbs upward on screen, so this is negative
+    // y: a positive y offset put every shadow above the thing casting it.
+    dir: [0.54, -0.84],
     tint: [0.05, 0.10, 0.17], // blue, so shadows sit on the blue floor
     koiAlpha: [0.12, 0.22], // by depth
     padAlpha: 0.15,
