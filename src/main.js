@@ -385,13 +385,13 @@ function fit(initial) {
       }
     }
   }
-  wirePanel();
   // build the scenery once. Rebuilding it on every resize re-rolled the random
   // generator, so all the pads jumped to brand new spots each time the window
   // changed size: you would aim at a pad you could still see and press water.
   if (Pond.school && !Pond.__sceneryBuilt) {
     Pond.__sceneryBuilt = true;
     buildSceneryFor(world);
+    wirePanel();
   }
 }
 
@@ -434,6 +434,7 @@ function setGreenery(level) {
 
 function wirePanel() {
   if (Pond.__panelWired) return;
+  if (!Pond.scenery || !Pond.scenery.surfaceMoss || !Pond.state) return;
   Pond.__panelWired = true;
   Pond.__matBase = Pond.scenery.surfaceMoss.slice();
   $(document).on("click", "#panel .sbtn", function () {
