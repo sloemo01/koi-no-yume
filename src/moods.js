@@ -47,13 +47,13 @@ const MOODS = {
   },
   sunset: {
     label: "Sunset",
-    skyTop: "#ffb066", skyBot: "#9a8bb8", skyAmt: 0.92, mist: 0.08,
-    glint: 1.30,
+    skyTop: "#ffa257", skyBot: "#9a8bb8", skyAmt: 0.86, mist: 0.08,
+    glint: 1.42,
     bloom: 1.25,
     glintCol: "#ff9c38",
     desat: 0.06,
-    exposure: 0.97, contrast: 1.16,
-    cloud: 0.28, rain: 0, warm: [1.17, 0.93, 0.79], vignette: 0.16, sunPower: 1.15,
+    exposure: 1.05, contrast: 1.16,
+    cloud: 0.28, rain: 0, warm: [1.19, 0.94, 0.79], vignette: 0.16, sunPower: 1.15,
   },
   moonlit: {
     // Built like sunset: a strong two-stop veil that carries the light from one
