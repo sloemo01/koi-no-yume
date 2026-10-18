@@ -1,8 +1,8 @@
-# pond
+# koi-no-yume
 
-A pixel-art koi pond that runs in the browser. Raw WebGL 2, jQuery for the ripples, MIT licensed. No image files anywhere: every koi, pad, flower and butterfly is painted pixel by pixel at runtime.
+A pixel-art koi pond that runs in the browser. Raw WebGL 2, jQuery for the ripples, MIT licensed. No image files anywhere: every koi, pad, flower, dragonfly and fish is painted pixel by pixel at runtime.
 
-The water fills the whole frame: no bank in view, just pond, with the floor shelving up toward the edges and the deep sitting under the middle. Leave it open and the koi drift around on their own, dipping to the cool and rising to the surface. Click the water and rings spread out, the fish turn and come over to look. Drag a lily pad across the surface and it pushes real waves, then settles back home.
+The water fills the whole frame: no bank in view, just pond, with the floor shelving up toward the edges and the deep sitting under the middle. Leave it open and the koi drift around on their own, mostly high in the water, occasionally dipping into the cool and staying down a while. Click the water and rings spread out, every koi turns and rises to circle the spot. Drag a lily pad across the surface and it pushes real waves, then settles back home.
 
 ![the pond](docs/hero.png)
 
@@ -16,29 +16,47 @@ python3 -m http.server 4173
 
 ## Controls
 
-- click or tap the water: a ripple, and the koi gather around it
+- click or tap the water: a ripple, and the koi come up and circle it
 - drag a lily pad, or drag across open water to shove it around
 - shift-click: drops food pellets; the koi break off and go eat them
 - `space` scatter · `[` `]` fewer or more koi · `1` `2` `3` pixel size
 - `d` draw the procedural spines · `f` food at the middle · `h` hide the interface · `r` a brand new pond · `s` sound
 
+On a phone or tablet the bar lays itself out as a grid, the keyboards hints drop away, and both panels dock to the bottom of the screen.
+
 ## What lives in the pond
 
-Ten nishikigoi looks, each drawn as its own fish rather than one shape recoloured: kohaku and sanke in bold red wraps with sumi spots, showa and shiro utsuri on black, bekko scattered with ink dots, tancho with a single clean crown, ogon and platinum in metal with a sheen down the back, asagi in a blue scale net with orange flanks, chagoi in olive with a fine net. Every pattern is painted when the fish spawns, so no two are identical, and tancho stays rare on purpose at one per pond. Schools of tiny minnows in four colours bolt when a koi passes overhead or a ring rolls through them. Butterflies wander the pond, find a flowering lily, circle it and land. Lily pads float in clusters with lotus flowers on some of them, mossy stones stand in the shallows toward the edges, reeds and grass lean in from just outside the frame, duckweed drifts across the middle, and cloud shadows sweep over everything. There is a sprite sheet at `docs/sprites.html` with all ten koi at 4x if you want to look at them closely.
+Six koi varieties, four of each by default: kohaku and sanke in bold red wraps with sumi spots, showa on black with red and white, ogon in solid metal gold, tancho with a single clean crown, and shiro, white with crisp ink patches. Every pattern is painted when the fish spawns, so no two are identical.
+
+Around them: schools of tiny minnows that bolt when a koi passes overhead, butterflies that wander and land on flowering lilies, dragonflies that hover and dart, water striders that stand on the surface film and scatter when something disturbs it, oxygen bubbles off the weed beds, lily pads and lotus flowers you can drag, water hyacinth with roots hanging into the water, duckweed drifting in rafts, stepping stones with fish weaving through them, a clay pot on the silty bottom, and cloud shade moving over everything.
+
+## Sound
+
+A calm recorded water bed, quiet enough to sit under everything, plus a single bird call every eleven to thirty-one seconds, at a random side and pitch. Clicks and splashes are deliberately silent: the pond is meant to sound like a place, not like an interface.
+
+Audio comes from Mixkit under their licence, which allows commercial and non-commercial use with no attribution required. Sources and the exact ffmpeg commands are in `assets/audio/README.md`.
+
+## Settings
+
+The bar has two panels. `Settings` covers koi count, greenery, bloom, glow, threshold and radius. `Advanced` covers the koi count slider, the small orange fish, each variety's count on its own, and planting: greenery, duckweed and flowers.
+
+The two panels always agree: the number in Settings is the sum of the varieties in Advanced, so raising it adds a fish to whichever variety is scarcest and lowering a variety moves that number with it. The pond cannot be emptied below one koi.
 
 ## How it works
 
-**Pixels.** The scene renders into a small buffer (your window divided by 4 pixels, so around 320 by 200) and the canvas is stretched back up with `image-rendering: pixelated`. Sprites are painted once on offscreen canvases, outlined, then alpha-hardened to 0 or 255 so nothing turns soft when the buffer is magnified. NEAREST sampling everywhere.
+**Pixels.** The scene renders into a small buffer (your window divided by 3 or 4 pixels) and the canvas is stretched back up with `image-rendering: pixelated`. Sprites are painted once on offscreen canvases, outlined, then alpha-hardened to 0 or 255 so nothing turns soft when the buffer is magnified. NEAREST sampling everywhere.
 
-**Fish.** Each koi steers from a few small urges: its own slow wander, spacing from its neighbours, a loose pull toward company, the shoreline push, the last click, and food. Heading chases the blended result through angular velocity, so turns ease in and out, and the turn rate is capped by the fish's own length so the body can never fold back on itself. The body is a relaxed chain of 14 spine nodes that keeps its distances from the head down, with a travelling wave added toward the tail in the vertex shader. The sprite is bent by that chain through a silhouette table measured from the painted art, which means fins and tail fans survive any bend without being squashed. Deeper fish are drawn first and tinted by the water colour, shallower ones pass over the top.
+**Fish.** Each koi steers from a few small urges: its own slow wander, spacing from its neighbours, a loose pull toward company, the shoreline push, the last click, and food. Heading chases the blended result through angular velocity, so turns ease in and out, and the turn rate is capped by the fish's own length so the body can never fold back on itself. The body is a relaxed chain of 14 spine nodes kept at their distances from the head, with a travelling wave added toward the tail in the vertex shader. The sprite is bent by that chain through a silhouette table measured from the painted art, so fins and tail fans survive any bend. Depth is a real variable: a fish that sinks is drawn smaller, tinted toward the deep colour, and its shadow spreads and softens.
 
-**Water.** A calm analytic swell plus a handful of rings. Every ring is a jQuery job: a plain object animated from p=0 to p=1 by jQuery's own ticker, and the step callback turns that timeline into a radius and an amplitude. Because the ring lives on a timeline instead of a grid, it expands once and fades. There is no way for it to bounce off the frame and come back, which is what makes it feel like one calm ring instead of a sloshing tank. The finished frame is drawn through one refraction pass: the surface slope, built from the same analytic field, displaces the whole image by whole pixels, so everything under the surface bends with the waves the way a background bends under jquery.ripples. The plugin itself ripples a static element background and its wave field is private, so a live scene cannot ride it. The maths runs on our own buffers instead. Fish and pads ride the same field: they bob as a ring passes and drift away from the crest.
+**Water.** A calm analytic swell plus a handful of rings. Every ring is a jQuery job: a plain object animated from 0 to 1 by jQuery's own ticker, and the step callback turns that timeline into a radius and an amplitude. Because the ring lives on a timeline instead of a grid, it expands once and fades. The finished frame is drawn through one refraction pass: the surface slope, built from the same analytic field, displaces the whole image by whole pixels, so everything under the surface bends with the waves.
 
-**Depth and light.** The pond floor is shaded by depth with caustics where the water is shallow, slow diagonal shafts of sunlight, and pebbles and algae. A bloom pass catches only the brightest pixels, so glints and flowers glow while the fish stay crisp, and cloud shadows drift over everything at the end.
+**Flow.** A small incompressible field, stable-fluids style, on a 75 by 37 grid: advect the velocity through itself, project it divergence free with fourteen Jacobi passes, then confine vorticity so eddies behind a stone do not smear out. Duckweed, hyacinth, bubbles and pellets sample it, fish tails push it, and every splash shoves it. Drag keeps it from accelerating forever, which is the difference between a pond and a river.
+
+**Depth and light.** The pond floor is shaded by depth with caustics where the water is shallow, slow diagonal shafts of sunlight, pebbles and algae. A bloom pass catches only the brightest pixels, so glints and flowers glow while the fish stay crisp, and cloud shade drifts over everything at the end.
 
 ## Tuning
 
-Every knob is in `src/config.js`: koi counts and palettes, ripple profiles, water colours and refraction strength, caustics, clouds, scenery counts. Edit, reload.
+Every knob is in `src/config.js`: koi counts and varieties, ripple profiles, water colours and refraction strength, caustics, cloud shade, flow, scenery counts. Edit, reload.
 
 ## URL parameters
 
@@ -49,17 +67,19 @@ Every knob is in `src/config.js`: koi counts and palettes, ripple profiles, wate
 
 ## Files
 
-- `index.html`: the page, the HUD, the script tags (classic scripts, in order)
+- `index.html`: the page, the panels, the script tags (classic scripts, in order)
 - `src/util.js`: seeded randomness, noise, small maths
 - `src/config.js`: every knob
 - `src/textures.js`: every sprite, painted pixel by pixel
 - `src/pond.js`: the shoreline table shared by the CPU and the shaders
-- `src/water.js`: the swell, the jelly ripple jobs, and the CPU side queries
-- `src/world.js`: scenery layout, pads that ride the water, clouds
+- `src/water.js`: the swell, the ripple jobs, and the CPU side queries
+- `src/flow.js`: the incompressible flow field
+- `src/world.js`: scenery layout, pads that ride the water
 - `src/fish.js`: koi behaviour, spines, minnow schools, feeding
-- `src/butterflies.js`
+- `src/butterflies.js`, `src/dragonflies.js`, `src/striders.js`
 - `src/gfx.js`: shaders, render targets, the frame pipeline
-- `src/main.js`: boot, input, the fixed-step loop, draw order
+- `src/main.js`: boot, input, sound, the fixed-step loop, draw order
+- `assets/audio/`: the recorded water and birds
 
 ## Credits
 

@@ -128,6 +128,12 @@ const TEXTURES = (() => {
   // Every look is its own fish: base coat, fin and tail tints, the pattern it
   // is known for, and a build. A kohaku is not a showa in other colours.
   const KOI_DESIGNS = {
+    // the small orange fish: one warm tone with a paler belly, no markings, so
+    // at half a koi's length it still reads as a fish and not as a smudge
+    orange: {
+      base: ["#ef8a2e", "#e0761f"], belly: "#ffd9a4", fin: "#f4a95e", tail: "#ef8f35",
+      kind: "saddles", saddle: ["#c9541a", "#b84915"], saddles: [1, 2],
+    },
     kohaku: {
       base: ["#f8f3e8", "#eee4d0"], belly: "#fffcf2", fin: "#f5e2d2", tail: "#f6ecdc",
       kind: "saddles", saddle: ["#d33f1c", "#c23318", "#e2542a"], saddles: [2, 3],
@@ -135,7 +141,7 @@ const TEXTURES = (() => {
     sanke: {
       base: ["#f8f3e8", "#eee4d0"], belly: "#fffcf2", fin: "#f1e6d6", tail: "#f6ecdc",
       kind: "saddles", saddle: ["#d33f1c", "#c93a1c"], saddles: [2, 3],
-      sumi: ["#1b1b24", "#26262f"], spots: [3, 6],
+      sumi: ["#1b1b24", "#26262f"], spots: [8, 13],
     },
     showa: {
       base: ["#1e1e29", "#141419"], belly: "#2c2c38", fin: "#e9ded0", tail: "#2a2a35",
@@ -149,6 +155,10 @@ const TEXTURES = (() => {
     bekko: {
       base: ["#f3edd9", "#e9dfc0"], belly: "#fdf7e6", fin: "#efe7d0", tail: "#f2ead6",
       kind: "bekko", sumi: ["#18181f", "#23232c"], spots: [7, 11],
+    },
+    shiro: {
+      base: ["#fbf8f1", "#f2eee3"], belly: "#ffffff", fin: "#f7f2e7", tail: "#faf6ec",
+      kind: "bekko", sumi: ["#14141b", "#1e1e27"], spots: [7, 11],
     },
     tancho: {
       base: ["#f9f4ec", "#f0ead9"], belly: "#fffdf6", fin: "#f5ebda", tail: "#f8f1e4",
@@ -305,7 +315,7 @@ const TEXTURES = (() => {
       // the prized one: a single clean crown between the eyes
       const cx = bodyLen * 0.19;
       const hw = maxHalf * bodyHalfAt(cx / Math.max(1, bodyLen - 1));
-      const rx = Math.max(2, bodyLen * 0.088);
+      const rx = Math.max(2, bodyLen * 0.072);
       const ry = Math.max(2, hw * 0.88);
       const crownCol = rand.pick(design.crown);
       for (let dy = -Math.ceil(ry); dy <= Math.ceil(ry); dy++) {
@@ -479,53 +489,49 @@ const TEXTURES = (() => {
     gold: { back: "#b07f2c", belly: "#f0d792", tail: "#96702a" },
     ember: { back: "#b04e28", belly: "#f0b98a", tail: "#8e3f20" },
   };
-
-  // A small fish at 12x8. Tapered body, a fan tail with a fork, a dorsal
-  // ridge, a pectoral fin, a two-tone eye and a lateral stripe. At this size
-  // every pixel is a decision: the silhouette plus the darkest and lightest
-  // tones carry the read, and the outline is a shade of the back, never black,
-  // so a school never looks like scattered bones.
+  // A small fish at 13x7: a pointed snout, a shoulder a third of the way back,
+  // a straight taper to a thin peduncle, and a fan tail grown straight out of
+  // that peduncle. Four tones down the body do the modelling; no outline, so
+  // the silhouette stays smooth at this size.
   function paintMinnow(rand, variant) {
     const v = MINNOW_VARIANTS[variant] || MINNOW_VARIANTS.silver;
-    const L = 12;
-    const H = 8;
+    const L = 13;
+    const H = 7;
     const { c, ctx } = makeCanvas(L, H);
-    const spineRow = 4;
+    const spineRow = 3;
     const back = hexToRgb(v.back);
     const belly = hexToRgb(v.belly);
     const tail = hexToRgb(v.tail);
-    const dark = shadeRgb(back, 0.66);
-    const rim = shadeRgb(tail, 0.72);
-    const stripe = mixRgb(belly, back, 0.38);
-    // half height per column: snout, head, deep shoulder, thin peduncle
-    const profile = [1, 2, 3, 3, 3, 2, 2, 1, 1];
+    const dark = shadeRgb(back, 0.78);
+    const mid = mixRgb(back, belly, 0.6);
+    const fin = mixRgb(tail, belly, 0.12);
+    const rim = shadeRgb(tail, 0.8);
+    // half height per column: snout, head, a long shoulder, a taper to the
+    // peduncle. No fins at this size: a single floating pixel reads as dirt.
+    const profile = [0, 1, 2, 2, 2, 2, 2, 1, 1];
     for (let x = 0; x < profile.length; x++) {
       const half = profile[x];
       for (let y = -half; y <= half; y++) {
-        const t = (y + half) / (half * 2 || 1);
-        const col = t < 0.34 ? back : t < 0.7 ? mixRgb(back, belly, 0.55) : belly;
+        const t = half === 0 ? 0.5 : (y + half) / (half * 2);
+        const col = t < 0.34 ? dark : t < 0.62 ? back : t < 0.86 ? mid : belly;
         px(ctx, x, spineRow + y, rgbToHex(col));
       }
-      if (x > 0) px(ctx, x, spineRow - half - 1, rgbToHex(dark));
     }
-    // dorsal ridge over the shoulder, anal fin under the belly
-    for (let x = 3; x <= 5; x++) px(ctx, x, spineRow - 4, rgbToHex(shadeRgb(back, 0.86)));
-    px(ctx, 5, spineRow + 3, rgbToHex(shadeRgb(tail, 0.8)));
-    px(ctx, 6, spineRow + 3, rgbToHex(shadeRgb(tail, 0.9)));
     // pectoral fin laid over the flank
-    px(ctx, 2, spineRow + 2, rgbToHex(mixRgb(tail, belly, 0.4)));
-    // fan tail, forked, with a darker trailing rim
-    for (let x = 9; x <= 11; x++) {
-      const spread = x === 9 ? 1 : 2;
-      for (let y = -spread; y <= spread; y++) {
-        if (x === 11 && y === 0) continue;
-        px(ctx, x, spineRow + y, rgbToHex(x === 11 ? rim : tail));
+    px(ctx, 2, spineRow + 1, rgbToHex(mixRgb(tail, belly, 0.4)));
+    // tail: one pixel of peduncle, then a fan the depth of the body with a
+    // single pixel notch, which is all the fork this size can carry
+    for (let x = 9; x <= 12; x++) {
+      const half = x === 9 ? 1 : 2;
+      for (let y = -half; y <= half; y++) {
+        if (x >= 11 && y === 0) continue;
+        px(ctx, x, spineRow + y, rgbToHex(x === 12 ? rim : fin));
       }
     }
-    // lateral stripe, then the eye: one dark pixel with a pale pixel above
-    for (let x = 2; x <= 7; x++) px(ctx, x, spineRow, rgbToHex(stripe));
-    px(ctx, 1, spineRow - 1, "#101318");
-    px(ctx, 1, spineRow - 2, rgbToHex(mixRgb(belly, "#ffffff", 0.5)));
+    // a pale flank line, then the eye
+    for (let x = 2; x <= 6; x++) px(ctx, x, spineRow + 1, rgbToHex(mixRgb(belly, back, 0.22)));
+    px(ctx, 1, spineRow, "#0e1116");
+    px(ctx, 1, spineRow - 1, rgbToHex(mixRgb(belly, "#ffffff", 0.5)));
     harden(c);
     return { canvas: c, extents: measureExtents(c, spineRow), length: L, height: H, spineRow };
   }
@@ -893,16 +899,32 @@ const TEXTURES = (() => {
   }
 
   function paintDuckweed(rand) {
-    const W = 5;
-    const H = 4;
+    // a tiny raft of two or three round leaves, not loose pixels: at four pixels
+    // across the silhouette is what makes it read as duckweed
+    const W = 6;
+    const H = 5;
     const { c, ctx } = makeCanvas(W, H);
-    const g = hexToRgb("#6da03c");
-    for (let i = 0; i < 3; i++) {
-      const x = Math.round(rand.range(1, W - 2));
-      const y = Math.round(rand.range(1, H - 2));
-      px(ctx, x, y, rgbToHex(shadeRgb(g, rand.range(0.9, 1.15))));
+    const greens = ["#5f9b34", "#6fae3e", "#7cbb48", "#548c2d"];
+    const leaves = rand.int(2, 3);
+    const spots = [[1.5, 2], [3.6, 1.6], [3.4, 3.4], [1.6, 3.6]];
+    for (let i = 0; i < leaves; i++) {
+      const [cx, cy] = spots[i];
+      const col = hexToRgb(rand.pick(greens));
+      const r = rand.range(1.1, 1.5);
+      for (let y = 0; y < H; y++) {
+        for (let x = 0; x < W; x++) {
+          const dx = (x + 0.5 - cx) / r;
+          const dy = (y + 0.5 - cy) / r;
+          const d = dx * dx + dy * dy;
+          if (d > 1) continue;
+          // darker at the rim, a touch lighter on the top left
+          const shade = d > 0.62 ? 0.82 : (dx + dy < -0.3 ? 1.14 : 1.0);
+          px(ctx, x, y, rgbToHex(shadeRgb(col, shade)));
+        }
+      }
     }
-    px(ctx, Math.round(rand.range(1, W - 2)), Math.round(rand.range(1, H - 2)), rgbToHex(shadeRgb(g, 1.2)));
+    const hy = Math.round(rand.range(0, H - 1));
+    px(ctx, Math.round(rand.range(0, W - 1)), hy, rgbToHex(shadeRgb(hexToRgb("#9bd268"), 1.05)));
     harden(c);
     return c;
   }
@@ -928,11 +950,231 @@ const TEXTURES = (() => {
     return c;
   }
 
+  // A tobi-ishi: a flat cut stepping stone, seen from above. Bigger than a
+  // pebble, because these are meant to be walked on: a lit top face, a bevel on
+  // the uphill edge, a dark side, and a rim that separates it from the water.
+  function paintSteppingStone(rand) {
+    const W = 22;
+    const H = 15;
+    const { c, ctx } = makeCanvas(W, H);
+    const base = hexToRgb("#a29b8c");
+    const dark = shadeRgb(base, 0.52);
+    const rx = rand.range(8.2, 9.4);
+    const ry = rand.range(4.4, 5.2);
+    const cx = W / 2 + rand.range(-0.6, 0.6);
+    const cy = H / 2 - 1.2;
+    // rim, one pixel proud all round, so the stone sits on the water
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        const q = Math.hypot((x - cx) / (rx + 0.7), (y - cy) / (ry + 0.7));
+        if (q <= 1) px(ctx, x, y, rgbToHex(dark));
+      }
+    }
+    // the side of the slab, stepped down and to the right
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        const q = Math.hypot((x - cx - 1.1) / rx, (y - cy - 2.0) / ry);
+        if (q <= 1) px(ctx, x, y, rgbToHex(shadeRgb(base, 0.6)));
+      }
+    }
+    // the top face
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        const q = Math.hypot((x - cx) / rx, (y - cy) / ry) *
+          (0.93 + valueNoise2(x * 0.8, y * 0.8 + 5) * 0.14);
+        if (q > 1) continue;
+        let col = mixRgb(shadeRgb(base, 1.18), shadeRgb(base, 0.88), smoothstep(0.25, 1, q));
+        col = shadeRgb(col, 1 + (valueNoise2(x * 0.9, y * 0.9) - 0.5) * 0.1);
+        px(ctx, x, y, rgbToHex(col));
+      }
+    }
+    // bevel along the uphill edge, wet and catching the light
+    for (let x = Math.round(cx - rx * 0.82); x <= Math.round(cx + rx * 0.5); x++) {
+      const y = Math.round(cy - ry * 0.92 + Math.abs(x - cx) * 0.12);
+      if (y < 0 || y >= H) continue;
+      px(ctx, x, y, rgbToHex(shadeRgb(base, 1.32)));
+    }
+    // a wet sheen across the middle, and a chip out of the downhill corner
+    px(ctx, Math.round(cx - rx * 0.3), Math.round(cy + ry * 0.1), rgbToHex(shadeRgb(base, 1.26)));
+    px(ctx, Math.round(cx + rx * 0.66), Math.round(cy + ry * 0.7), rgbToHex(shadeRgb(base, 0.72)));
+    harden(c);
+    return c;
+  }
+
+  // ---- dragonfly ------------------------------------------------------------
+  // Body up the middle with the head at the top, because the renderer draws it
+  // rotated by heading + 90 degrees. Three wing poses make the beat read as a
+  // blur: out flat, half swept, and lifted to a sliver.
+  const DRAGONFLY_PALETTES = {
+    emerald: { body: "#2f5a4a", back: "#4e8a6c", eyes: "#8ff0c8", tail: "#3d6f58" },
+    blue: { body: "#2c4363", back: "#56789e", eyes: "#a8d8ff", tail: "#3a567c" },
+    red: { body: "#6b2f2a", back: "#a85545", eyes: "#ffc9a8", tail: "#7d3a32" },
+    bronze: { body: "#4a3a26", back: "#8a6f45", eyes: "#ffdca8", tail: "#5c472e" },
+  };
+
+  function paintDragonfly(rand, variant, wing) {
+    const v = DRAGONFLY_PALETTES[variant] || DRAGONFLY_PALETTES.emerald;
+    const W = 15;
+    const H = 13;
+    const { c, ctx } = makeCanvas(W, H);
+    const body = hexToRgb(v.body);
+    const back = hexToRgb(v.back);
+    const eyes = hexToRgb(v.eyes);
+    const tail = hexToRgb(v.tail);
+    const wingPale = hexToRgb("#dff0f4");
+    const wingEdge = hexToRgb("#9dc2cc");
+    const cx = 7;
+    // head and eyes
+    px(ctx, cx, 0, rgbToHex(back));
+    px(ctx, cx - 1, 1, rgbToHex(eyes));
+    px(ctx, cx + 1, 1, rgbToHex(eyes));
+    px(ctx, cx, 1, rgbToHex(shadeRgb(body, 0.7)));
+    // thorax
+    for (let y = 2; y <= 4; y++) {
+      px(ctx, cx - 1, y, rgbToHex(back));
+      px(ctx, cx, y, rgbToHex(body));
+      px(ctx, cx + 1, y, rgbToHex(shadeRgb(body, 0.78)));
+    }
+    // abdomen, tapering to a point
+    for (let y = 5; y <= 11; y++) {
+      const t = (y - 5) / 6;
+      const wide = t < 0.5 ? 1 : 0;
+      for (let dx = -wide; dx <= wide; dx++) {
+        const shade = dx < 0 ? 1.12 : dx > 0 ? 0.78 : 1;
+        px(ctx, cx + dx, y, rgbToHex(shadeRgb(mixRgb(tail, body, t * 0.4), shade)));
+      }
+      if (y === 6 || y === 9) {
+        px(ctx, cx - (wide + 1), y, rgbToHex(shadeRgb(tail, 0.85)));
+        px(ctx, cx + (wide + 1), y, rgbToHex(shadeRgb(tail, 0.7)));
+      }
+    }
+    px(ctx, cx, 12, rgbToHex(shadeRgb(tail, 0.65)));
+    // four wings, two poses per side depending on the beat
+    const wingRow = wing === 0 ? [3, 5] : wing === 1 ? [4, 6] : [2, 4];
+    const reach = wing === 0 ? 5 : wing === 1 ? 3 : 2;
+    const rise = wing === 2 ? -1 : 0;
+    const drawWing = (dy, dir, long) => {
+      for (let i = 1; i <= reach; i++) {
+        const wx = cx + dir * (1 + i);
+        const wy = wingRow[dy] + rise + (long ? 0 : i > 2 ? 1 : 0);
+        if (wx < 0 || wx >= W || wy < 0 || wy >= H) continue;
+        px(ctx, wx, wy, rgbToHex(i === reach ? wingEdge : wingPale));
+      }
+    };
+    drawWing(0, -1, true);
+    drawWing(0, 1, true);
+    drawWing(1, -1, false);
+    drawWing(1, 1, false);
+    harden(c);
+    return c;
+  }
+
+
+  // A water hyacinth: a rosette of blunt leaves over a swollen float, sitting
+  // higher and lighter than a lily pad so the floating layer has two
+  // silhouettes instead of one repeated shape.
+  function paintWaterHyacinth(rand) {
+    const W = 16;
+    const H = 13;
+    const { c, ctx } = makeCanvas(W, H);
+    const cx = W / 2;
+    const cy = H / 2 + 1;
+    const leaf = hexToRgb("#4f8a3e");
+    const leafLit = hexToRgb("#6faa52");
+    const leafDark = hexToRgb("#315c2c");
+    const float = hexToRgb("#8f6f52");
+    // the swollen float underneath
+    ellipse(ctx, cx, cy + 2.4, 4.4, 2.6, rgbToHex(shadeRgb(float, 0.9)));
+    ellipse(ctx, cx, cy + 2.0, 3.2, 1.8, rgbToHex(shadeRgb(float, 1.06)));
+    // six to nine rounded leaves fanned round the middle
+    const n = rand.int(6, 9);
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2 + rand.range(-0.12, 0.12);
+      const r = rand.range(3.6, 5.2);
+      const lx = cx + Math.cos(a) * r;
+      const ly = cy + Math.sin(a) * r * 0.78;
+      const rx = rand.range(2.0, 2.9);
+      const ry = rand.range(1.7, 2.3);
+      const lit = a > Math.PI * 1.05 && a < Math.PI * 1.85;
+      ellipse(ctx, lx, ly, rx, ry, rgbToHex(lit ? leafLit : leaf));
+      // a dark rim on the downhill side, one pixel in
+      ellipse(ctx, lx + 0.3, ly + 0.6, rx - 0.9, ry - 0.7, rgbToHex(leafDark));
+      ellipse(ctx, lx, ly - 0.2, rx - 1.1, ry - 0.9, rgbToHex(lit ? leafLit : leaf));
+      px(ctx, Math.round(lx), Math.round(ly), rgbToHex(shadeRgb(leafLit, 1.15)));
+    }
+    harden(c);
+    return c;
+  }
+
+  // A clay pot lying on its side in the shallows, half silted in. Terracotta,
+  // a dark mouth, an algae fringe along the rim: the one thing in the pond a
+  // person clearly put there for the fish.
+  function paintClayPot(rand) {
+    const W = 24;
+    const H = 16;
+    const { c, ctx } = makeCanvas(W, H);
+    const clay = hexToRgb("#a4573a");
+    const clayLit = hexToRgb("#c0714c");
+    const clayDark = hexToRgb("#6d3826");
+    const algae = hexToRgb("#5c8a4a");
+    // body: a barrel lying across, mouth on the right
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        const rx = (x - 11) / 9.2;
+        const ry = (y - 8) / 5.2;
+        if (rx * rx + ry * ry > 1) continue;
+        const band = 0.5 + 0.5 * Math.sin(x * 0.55);
+        let col = mixRgb(clayDark, clayLit, 0.25 + 0.6 * band);
+        if (y < 5) col = shadeRgb(col, 1.12);
+        if (y > 11) col = shadeRgb(col, 0.82);
+        px(ctx, x, y, rgbToHex(col));
+      }
+    }
+    // the mouth: dark inside with a pale lip
+    ellipse(ctx, 19, 8, 4.0, 4.6, rgbToHex(clayLit));
+    ellipse(ctx, 19.4, 8, 3.0, 3.6, rgbToHex(hexToRgb("#1b2320")));
+    ellipse(ctx, 19.6, 8.4, 2.0, 2.4, rgbToHex(hexToRgb("#0d1210")));
+    // algae along the upper rim and a drift of silt at the foot
+    for (let i = 0; i < 10; i++) {
+      const ax = Math.round(rand.range(3, 19));
+      const ay = Math.round(rand.range(3, 6));
+      px(ctx, ax, ay, rgbToHex(shadeRgb(algae, 1 + rand.range(-0.15, 0.2))));
+    }
+    for (let i = 0; i < 7; i++) {
+      px(ctx, Math.round(rand.range(2, 20)), Math.round(rand.range(13, 15)), rgbToHex(shadeRgb(hexToRgb("#7b7461"), 1 + rand.range(-0.1, 0.1))));
+    }
+    harden(c);
+    return c;
+  }
+
+  // A water strider: a slim body with four legs and a pale highlight, drawn
+  // small because it lives on the surface and its shadow is four dimples, not a
+  // body shadow.
+  function paintStrider(rand) {
+    const W = 9;
+    const H = 7;
+    const { c, ctx } = makeCanvas(W, H);
+    const body = hexToRgb("#2b2b30");
+    const lit = hexToRgb("#8f9aa0");
+    // legs: two forward, two back, splayed
+    for (const [dx, dy] of [[-3, -2], [3, -2], [-3, 2], [3, 2]]) {
+      px(ctx, 4 + dx, 3 + dy, rgbToHex(shadeRgb(body, 0.9)));
+      px(ctx, 4 + Math.round(dx * 0.6), 3 + Math.round(dy * 0.6), rgbToHex(body));
+    }
+    // body
+    for (let x = 2; x <= 6; x++) px(ctx, x, 3, rgbToHex(body));
+    px(ctx, 4, 2, rgbToHex(lit));
+    px(ctx, 5, 4, rgbToHex(shadeRgb(body, 0.7)));
+    harden(c);
+    return c;
+  }
+
   return {
     makeCanvas, harden, outline, measureExtents, extentsAt,
     paintKoi, paintMinnow, paintButterfly, paintButterflyRest,
     paintLilyPad, paintLotusFlower, paintMossClump, paintStone,
     paintGrassTuft, paintReedClump, paintShoreFlower, paintDuckweed, paintBlob, paintPondWeed, paintFloatingMoss,
-    KOI_DESIGNS, MINNOW_VARIANTS,
+    paintSteppingStone, paintDragonfly, paintWaterHyacinth, paintClayPot, paintStrider,
+    KOI_DESIGNS, MINNOW_VARIANTS, DRAGONFLY_PALETTES,
   };
 })();

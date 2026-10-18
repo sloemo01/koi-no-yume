@@ -1,11 +1,16 @@
 {
-  "name": "pond",
+  "name": "koi-no-yume",
   "version": "1.0.0",
-  "private": true,
-  "description": "A pixel-art koi pond. Raw WebGL 2, jQuery for the ripples, no build step.",
+  "private": false,
+  "description": "A pixel-art koi pond in WebGL 2. No image files: every koi, pad and creature is painted at runtime.",
   "license": "MIT",
   "type": "module",
   "scripts": {
     "start": "node serve.mjs"
+  },
+  "homepage": "https://koi-no-yume.vercel.app",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/sloemo01/koi-no-yume.git"
   }
 }

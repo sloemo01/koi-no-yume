@@ -20,6 +20,7 @@ const Pond = {
     fpsClock: 0,
     pointer: { x: 0, y: 0, down: false },
     dragPad: null,
+    grab: null,
     lastWake: 0,
     lastDragSpawn: { x: -999, y: -999 },
     demo: false,
@@ -42,65 +43,307 @@ const Sound = {
     this.ctx = new AC();
     this.master = this.ctx.createGain();
     this.master.gain.value = CONFIG.sound.volume;
-    this.master.connect(this.ctx.destination);
+    // glue and a ceiling: the water bed wants to be present, not peaking
+    this.limiter = this.ctx.createDynamicsCompressor();
+    this.limiter.threshold.value = -14;
+    this.limiter.knee.value = 10;
+    this.limiter.ratio.value = 8;
+    this.limiter.attack.value = 0.003;
+    this.limiter.release.value = 0.22;
+    this.master.connect(this.limiter);
+    this.limiter.connect(this.ctx.destination);
   },
   setEnabled(on) {
     this.enabled = on;
     if (on) {
       this.init();
       if (this.ctx && this.ctx.state === "suspended") this.ctx.resume();
+      this.loadAssets();
+      this.startBed();
+    } else {
+      this.stopBed();
     }
   },
-  plop(strength) {
-    if (!this.enabled || !this.ctx) return;
-    const t = this.ctx.currentTime;
-    const osc = this.ctx.createOscillator();
-    const gain = this.ctx.createGain();
-    osc.type = "sine";
-    osc.frequency.setValueAtTime(520 + Math.random() * 120, t);
-    osc.frequency.exponentialRampToValueAtTime(150, t + 0.16);
-    gain.gain.setValueAtTime(0.0001, t);
-    gain.gain.exponentialRampToValueAtTime(0.16 * (strength || 1), t + 0.012);
-    gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.28);
-    osc.connect(gain);
-    gain.connect(this.master);
-    osc.start(t);
-    osc.stop(t + 0.3);
-    // a breath of filtered noise on top
-    const buf = this.ctx.createBuffer(1, 2205, this.ctx.sampleRate);
-    const data = buf.getChannelData(0);
-    for (let i = 0; i < data.length; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / data.length);
-    const src = this.ctx.createBufferSource();
-    src.buffer = buf;
-    const lp = this.ctx.createBiquadFilter();
-    lp.type = "lowpass";
-    lp.frequency.value = 1400;
-    const ng = this.ctx.createGain();
-    ng.gain.value = 0.06 * (strength || 1);
-    src.connect(lp);
-    lp.connect(ng);
-    ng.connect(this.master);
+
+  // ---- the flowing-water bed ------------------------------------------------
+  // Pink-ish noise through a band-pass whose centre and level follow the flow
+  // field's kinetic energy, so the pond gets louder and brighter where the
+  // water is actually moving. Two layers: a bright wash and a slow lap.
+
+  // ---- recorded water ------------------------------------------------------
+  // Files live in assets/audio. Mixkit licence: free, no attribution needed.
+  assetUrls: {
+    bed: "assets/audio/water-bed.mp3",
+    birds: [
+      "assets/audio/bird-1.mp3", "assets/audio/bird-2.mp3",
+      "assets/audio/bird-3.mp3", "assets/audio/bird-4.mp3",
+    ],
+  },
+  assets: { bed: null, birds: [] },
+  assetsLoaded: false,
+  assetsLoading: false,
+
+  loadAssets() {
+    if (this.assetsLoaded || this.assetsLoading || !this.ctx) return;
+    this.assetsLoading = true;
+    const decode = (url) => fetch(url)
+      .then((r) => {
+        if (!r.ok) throw new Error(url + " " + r.status);
+        return r.arrayBuffer();
+      })
+      .then((buf) => this.ctx.decodeAudioData(buf));
+    Promise.all([
+      decode(this.assetUrls.bed),
+      Promise.all(this.assetUrls.birds.map(decode)),
+    ]).then(([bed, birds]) => {
+      this.assets = { bed, birds };
+      this.assetsLoaded = true;
+      this.assetsLoading = false;
+      // the synthesised bed was already running by the time the file decoded;
+      // swap it out instead of leaving the stand-in playing forever
+      if (this.enabled) {
+        if (this.bed && !this.bed.recorded) this.stopBed();
+        this.startBed();
+      }
+    }).catch((e) => {
+      this.assetsLoading = false;
+      this.assetsError = String(e && e.message ? e.message : e);
+      // the synthesised voices stay as the fallback
+      if (this.enabled) this.startBed();
+    });
+  },
+
+  makeNoise(seconds) {
+    const sr = this.ctx.sampleRate;
+    const len = Math.max(1, Math.floor(sr * seconds));
+    const buf = this.ctx.createBuffer(2, len, sr);
+    for (let ch = 0; ch < 2; ch++) {
+      const data = buf.getChannelData(ch);
+      let slow = 0;
+      for (let i = 0; i < len; i++) {
+        const white = Math.random() * 2 - 1;
+        slow = slow * 0.94 + white * 0.06;      // rolling low end
+        data[i] = white * 0.5 + slow * 2.4;
+      }
+      // fade the seam so the loop does not click
+      const fade = Math.min(2048, len >> 2);
+      for (let i = 0; i < fade; i++) {
+        const k = i / fade;
+        data[i] *= k;
+        data[len - 1 - i] *= k;
+      }
+    }
+    return buf;
+  },
+  startBed() {
+    if (!this.ctx || this.bed) return;
+    const ctx = this.ctx;
+    if (this.assetsLoaded && this.assets.bed) {
+      this.startRecordedBed();
+      return;
+    }
+    const noise = this.noiseBuffer || (this.noiseBuffer = this.makeNoise(6));
+    const t = ctx.currentTime;
+    const wash = ctx.createBufferSource();
+    wash.buffer = noise; wash.loop = true;
+    const hp = ctx.createBiquadFilter(); hp.type = "highpass"; hp.frequency.value = 160;
+    const bp = ctx.createBiquadFilter(); bp.type = "bandpass"; bp.frequency.value = 520; bp.Q.value = 0.5;
+    const g = ctx.createGain(); g.gain.value = 0.0001;
+    const pan = ctx.createStereoPanner ? ctx.createStereoPanner() : null;
+    wash.connect(hp); hp.connect(bp); bp.connect(g);
+    if (pan) { g.connect(pan); pan.connect(this.master); } else { g.connect(this.master); }
+    wash.start(t);
+    g.gain.setTargetAtTime(0.05, t, 1.4);
+
+    const lap = ctx.createBufferSource();
+    lap.buffer = noise; lap.loop = true; lap.playbackRate.value = 0.71;
+    const lp = ctx.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 430;
+    const g2 = ctx.createGain(); g2.gain.value = 0.0001;
+    lap.connect(lp); lp.connect(g2); g2.connect(this.master);
+    lap.start(t);
+    g2.gain.setTargetAtTime(0.035, t, 1.8);
+
+    this.bed = { wash, lap, bp, lp, g, g2, pan };
+  },
+  // the real thing: a recorded river, gently filtered and slowly panned
+  startRecordedBed() {
+    const ctx = this.ctx;
+    const t = ctx.currentTime;
+    const src = ctx.createBufferSource();
+    src.buffer = this.assets.bed;
+    src.loop = true;
+    const tone = ctx.createBiquadFilter();
+    tone.type = "lowpass";
+    tone.frequency.value = 2400;
+    tone.Q.value = 0.4;
+    const g = ctx.createGain();
+    g.gain.value = 0.0001;
+    const pan = ctx.createStereoPanner ? ctx.createStereoPanner() : null;
+    src.connect(tone); tone.connect(g);
+    if (pan) { g.connect(pan); pan.connect(this.master); } else { g.connect(this.master); }
     src.start(t);
+    g.gain.setTargetAtTime(0.85, t, 1.6);
+    this.bed = { wash: src, lap: null, bp: tone, lp: tone, g, g2: null, pan, recorded: true };
+  },
+  stopBed() {
+    if (!this.bed) return;
+    const { wash, lap, g, g2 } = this.bed;
+    const t = this.ctx.currentTime;
+    g.gain.setTargetAtTime(0.0001, t, 0.3);
+    if (g2) g2.gain.setTargetAtTime(0.0001, t, 0.3);
+    try { wash.stop(t + 1.4); } catch (e) { void e; }
+    if (lap) { try { lap.stop(t + 1.4); } catch (e) { void e; } }
+    this.bed = null;
+  },
+  // called from the frame loop; cheap, and throttled by the caller
+  setFlow(speed, swell) {
+    if (!this.bed || !this.ctx) return;
+    const t = this.ctx.currentTime;
+    const s = Math.max(0, Math.min(1, speed / 9));
+    if (this.bed.recorded) {
+      // barely any movement: this is a calm backdrop, not a river. The field
+      // nudges the tone and the level a little and that is all.
+      this.bed.bp.frequency.setTargetAtTime(1700 + 900 * s, t, 1.2);
+      this.bed.g.gain.setTargetAtTime(0.8 + 0.1 * s + 0.02 * (swell || 0), t, 1.0);
+    } else {
+      this.bed.bp.frequency.setTargetAtTime(340 + 980 * s, t, 0.35);
+      this.bed.g.gain.setTargetAtTime(0.028 + 0.105 * s + 0.012 * (swell || 0), t, 0.3);
+      this.bed.lp.frequency.setTargetAtTime(360 + 190 * (swell || 0), t, 0.6);
+      if (this.bed.g2) this.bed.g2.gain.setTargetAtTime(0.022 + 0.04 * (swell || 0), t, 0.5);
+    }
+    if (this.bed.pan) this.bed.pan.pan.setTargetAtTime(Math.sin(t * 0.21) * 0.42, t, 1.6);
+  },
+  // every event gets its own gain and stereo position, so a splash on the left
+  // is heard on the left
+  bus(pan) {
+    const g = this.ctx.createGain();
+    if (this.ctx.createStereoPanner) {
+      const p = this.ctx.createStereoPanner();
+      p.pan.value = Math.max(-1, Math.min(1, pan || 0));
+      g.connect(p);
+      p.connect(this.master);
+    } else {
+      g.connect(this.master);
+    }
+    return g;
+  },
+
+  // A water drop, built the way water actually sounds: the film breaks (bright
+  // tick), the trapped bubble rings and its resonance climbs as it shrinks, the
+  // mass of water thumps, and the splash tail hisses out. A single sine sweep
+  // reads as a beep because nothing in it is broadband.
+  plop(strength, pan) {
+    // Silenced on purpose: the pond is meant to sound like a place, not like an
+    // interface. Clicks, pads and gulps make no sound.
+    return;
+    /* eslint-disable no-unreachable */
+    const ctx = this.ctx;
+    const t = ctx.currentTime;
+    const s = Math.max(0.25, Math.min(1.8, strength === undefined ? 1 : strength));
+    const out = this.bus(pan);
+
+    if (this.assetsLoaded && this.assets.drops.length) {
+      const pick = this.assets.drops[Math.floor(Math.random() * this.assets.drops.length)];
+      const src = this.ctx.createBufferSource();
+      src.buffer = pick;
+      // small rate and timing variation so repeats never sound like a sample
+      src.playbackRate.value = 0.86 + Math.random() * 0.3;
+      const g = this.ctx.createGain();
+      g.gain.value = 0.85 * s;
+      src.connect(g); g.connect(out);
+      src.start(this.ctx.currentTime + Math.random() * 0.01);
+      if (this.assets.bubble && Math.random() < 0.22) {
+        const b = this.ctx.createBufferSource();
+        b.buffer = this.assets.bubble;
+        b.playbackRate.value = 1.1 + Math.random() * 0.4;
+        const bg = this.ctx.createGain();
+        bg.gain.value = 0.22 * s;
+        b.connect(bg); bg.connect(out);
+        b.start(this.ctx.currentTime + 0.03 + Math.random() * 0.05);
+      }
+      return;
+    }
+
+    const noise = this.noiseBuffer || (this.noiseBuffer = this.makeNoise(6));
+
+    // 1. the tick of the surface film breaking
+    const tick = ctx.createBufferSource();
+    tick.buffer = noise;
+    const tickBp = ctx.createBiquadFilter();
+    tickBp.type = "bandpass"; tickBp.frequency.value = 3400; tickBp.Q.value = 0.9;
+    const tickG = ctx.createGain();
+    tickG.gain.setValueAtTime(0.0001, t);
+    tickG.gain.exponentialRampToValueAtTime(0.18 * s, t + 0.004);
+    tickG.gain.exponentialRampToValueAtTime(0.0001, t + 0.05);
+    tick.connect(tickBp); tickBp.connect(tickG); tickG.connect(out);
+    tick.start(t, Math.random() * 3, 0.07);
+
+    // 2. the bubble: pitch climbs as it shrinks, which is the "water" cue
+    const bub = ctx.createOscillator();
+    bub.type = "sine";
+    const f0 = 250 + Math.random() * 130;
+    bub.frequency.setValueAtTime(f0, t);
+    bub.frequency.exponentialRampToValueAtTime(f0 * (2.3 + Math.random() * 0.9), t + 0.1);
+    const bubG = ctx.createGain();
+    bubG.gain.setValueAtTime(0.0001, t);
+    bubG.gain.exponentialRampToValueAtTime(0.32 * s, t + 0.008);
+    bubG.gain.exponentialRampToValueAtTime(0.0001, t + 0.17);
+    bub.connect(bubG); bubG.connect(out);
+    bub.start(t); bub.stop(t + 0.19);
+
+    // 3. the mass of water under it
+    const body = ctx.createOscillator();
+    body.type = "sine";
+    body.frequency.setValueAtTime(210 + Math.random() * 50, t);
+    body.frequency.exponentialRampToValueAtTime(92, t + 0.14);
+    const bodyG = ctx.createGain();
+    bodyG.gain.setValueAtTime(0.0001, t);
+    bodyG.gain.exponentialRampToValueAtTime(0.36 * s, t + 0.01);
+    bodyG.gain.exponentialRampToValueAtTime(0.0001, t + 0.26);
+    body.connect(bodyG); bodyG.connect(out);
+    body.start(t); body.stop(t + 0.28);
+
+    // 4. the splash tail
+    const spl = ctx.createBufferSource();
+    spl.buffer = noise;
+    const splHp = ctx.createBiquadFilter(); splHp.type = "highpass"; splHp.frequency.value = 800;
+    const splBp = ctx.createBiquadFilter(); splBp.type = "bandpass"; splBp.frequency.value = 2000; splBp.Q.value = 0.5;
+    const splG = ctx.createGain();
+    splG.gain.setValueAtTime(0.0001, t);
+    splG.gain.exponentialRampToValueAtTime(0.34 * s, t + 0.014);
+    splG.gain.exponentialRampToValueAtTime(0.0001, t + 0.22 + 0.12 * s);
+    spl.connect(splHp); splHp.connect(splBp); splBp.connect(splG); splG.connect(out);
+    spl.start(t, Math.random() * 2.5, 0.4);
   },
   gulp() {
-    if (!this.enabled || !this.ctx) return;
-    const t = this.ctx.currentTime;
-    const osc = this.ctx.createOscillator();
-    const gain = this.ctx.createGain();
-    osc.type = "triangle";
-    osc.frequency.setValueAtTime(160, t);
-    osc.frequency.exponentialRampToValueAtTime(70, t + 0.1);
-    gain.gain.setValueAtTime(0.0001, t);
-    gain.gain.exponentialRampToValueAtTime(0.09, t + 0.01);
-    gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.16);
-    osc.connect(gain);
-    gain.connect(this.master);
-    osc.start(t);
-    osc.stop(t + 0.18);
+    // a fish surfacing is part of the water bed, not a one-off ping
   },
+
+  // a bird somewhere off frame, now and then. Random gap, random call, random
+  // side, so the pattern never settles into a loop.
+  birdAt(time) {
+    if (!this.enabled || !this.assetsLoaded || !this.assets.birds.length) return;
+    const ctx = this.ctx;
+    const buf = this.assets.birds[Math.floor(Math.random() * this.assets.birds.length)];
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    src.playbackRate.value = 0.94 + Math.random() * 0.14;
+    const g = ctx.createGain();
+    g.gain.value = 0.3 + Math.random() * 0.16;
+    const out = this.bus((Math.random() * 2 - 1) * 0.75);
+    src.connect(g); g.connect(out);
+    src.start(ctx.currentTime + Math.random() * 0.05);
+  },
+
 };
 
 // ------------------------------------------------------------------ setup
+
+// a splash on the left of the pond should be heard on the left
+function pondPan(x) {
+  const w = Pond.world && Pond.world.res ? Pond.world.res.x : 450;
+  return Math.max(-0.85, Math.min(0.85, ((x / w) * 2 - 1) * 0.85));
+}
 
 function params() {
   const q = new URLSearchParams(window.location.search);
@@ -117,6 +360,30 @@ function boot() {
   const canvas = document.getElementById("pond");
   const options = params();
   const st = Pond.state;
+  // Phones and tablets render a smaller world and stretch it further: a 4 px
+  // backing store on a 120 Hz tablet is a lot of fragments for no visible gain.
+  const coarse = window.matchMedia && window.matchMedia("(pointer: coarse)").matches;
+  const small = Math.min(window.innerWidth, window.innerHeight) < 700;
+  // pointer type only: a Windows touch laptop reports ontouchstart but still
+  // has a mouse and a keyboard, and should keep the desktop UI
+  st.touch = !!coarse;
+  if (st.touch) {
+    const hint = document.getElementById("hint");
+    if (hint) {
+      hint.innerHTML =
+        '<div class="row"><b>tap</b> the water and the koi come over</div>'
+        + '<div class="row dim"><b>drag</b> a lily pad, or drag across the water to push it around</div>';
+    }
+    // the on-screen keycaps and the scatter shortcut assume a keyboard
+    for (const b of document.querySelectorAll(".top-actions .btn kbd")) b.remove();
+    const grabBtn = document.getElementById("p-grab");
+    if (grabBtn) grabBtn.textContent = "grab";
+    const sndBtn = document.getElementById("p-sound");
+    if (sndBtn) sndBtn.textContent = "sound";
+    for (const b of document.querySelectorAll(".top-actions .btn[data-key='h']")) b.textContent = "hide";
+    for (const b of document.querySelectorAll(".top-actions .btn[data-key=' ']")) b.textContent = "scatter";
+  }
+  if (coarse && !options.pixelSize) st.pixelSize = small ? 3 : 4;
   st.seed = options.seed || CONFIG.seed;
   if (options.pixelSize) st.pixelSize = options.pixelSize;
   if (options.koiCount) CONFIG.koi.count = options.koiCount;
@@ -140,7 +407,6 @@ function boot() {
     minnows: [],
     pellets: [],
     call: { x: 0, y: 0, age: 999, duration: 2.6, radius: 150, active: false },
-    clouds: [],
     ringUniformCount: 0,
     onGulp: () => Sound.gulp(),
   };
@@ -157,6 +423,11 @@ function boot() {
     for (const m of school.fish) m.spineTex = gfx.makeSpineTex();
   }
   Pond.butterflies = createButterflies(new Rand(st.seed ^ 0x5bf03635), world.res);
+  Pond.dragonflies = createDragonflies(new Rand(st.seed ^ 0x1f83d9ab), world.res);
+  Pond.striders = createStriders(new Rand(st.seed ^ 0x2545f491), world.res);
+  Pond.flow = new FlowField(world.res, 6);
+  Pond.flow.build(Pond.scenery);
+  world.bubbles = [];
 
   buildSceneryFor(world);
   wirePanel(); // the panel needs scenery and state; boot is where they exist
@@ -175,6 +446,7 @@ function boot() {
   }
 
   installInput(canvas);
+  installPanelChrome();
 
   // paint one frame synchronously: a tab that is not visible yet gets no
   // animation frames, and the pond must not be blank when it is looked at
@@ -321,10 +593,81 @@ function boot() {
   };
 }
 
+
+// ------------------------------------------------------------------ bubbles
+// Oxygen off the weed beds. A clump releases a thread of bubbles every few
+// seconds, they rise with a wobble and pop into a hairline ring at the surface.
+// The odd one comes off a fish as well, so the weed beds stop being scenery.
+function updateBubbles(dt, time, world, weeds) {
+  const B = CONFIG.bubbles;
+  const list = world.bubbles || (world.bubbles = []);
+  if (weeds) {
+    for (const w of weeds) {
+      if (w.bubbleTimer === undefined) w.bubbleTimer = time + (w.x % 3) * 1.7;
+      if (time < w.bubbleTimer) continue;
+      w.bubbleTimer = time + B.weedEvery[0] + Math.random() * (B.weedEvery[1] - B.weedEvery[0]);
+      const n = B.perThread[0] + Math.floor(Math.random() * (B.perThread[1] - B.perThread[0] + 1));
+      for (let i = 0; i < n; i++) {
+        list.push({
+          x: w.x + (Math.random() - 0.5) * 5,
+          y: w.y + (Math.random() - 0.5) * 4,
+          rise: B.rise[0] + Math.random() * (B.rise[1] - B.rise[0]),
+          wobble: Math.random() * Math.PI * 2,
+          age: 0,
+          size: 1 + Math.random() * 1.2,
+        });
+      }
+      if (list.length > 90) list.splice(0, list.length - 90);
+    }
+  }
+  for (let i = list.length - 1; i >= 0; i--) {
+    const b = list[i];
+    b.age += dt;
+    b.y -= b.rise * dt;
+    b.x += Math.sin(time * 3.1 + b.wobble) * 5 * dt;
+    if (Pond.flow) {
+      const f = Pond.flow.sample(b.x, b.y);
+      b.x += f.x * dt * 0.5;
+      b.y += f.y * dt * 0.4;
+    }
+    b.wobble += dt * 2.4;
+    if (b.age > 1) {
+      // pop: a ring the size of a pinhead
+      spawnRipple("mouth", b.x, b.y, { scale: 0.3 });
+      list.splice(i, 1);
+    }
+  }
+}
+
+// a fish letting a bubble go, or a puff off a weed clump, on demand
+function spawnBubbles(x, y, n, rise) {
+  const list = Pond.world && Pond.world.bubbles;
+  if (!list) return;
+  for (let i = 0; i < n; i++) {
+    list.push({
+      x: x + (Math.random() - 0.5) * 4,
+      y: y + (Math.random() - 0.5) * 3,
+      rise: (rise || 10) + Math.random() * 6,
+      wobble: Math.random() * Math.PI * 2,
+      age: 0,
+      size: 1 + Math.random(),
+    });
+  }
+}
+
 function buildSceneryFor(world) {
   const rand = new Rand(Pond.state.seed ^ 0x9e3779b9);
   Pond.scenery = buildScenery(rand, world.res, world.pond);
-  world.clouds = Pond.scenery.clouds;
+  // a reseed builds a brand new set of pads, so any reference to the old ones
+  // is now a pad that is not drawn anywhere and cannot be pressed
+  Pond.state.dragPad = null;
+  Pond.state.grab = null;
+  Pond.state.hoverPad = null;
+  Pond.state.selPad = null;
+  // Mark the scenery as built here, not only on the resize path: otherwise the
+  // first resize after boot built a second set of pads and the pond reshuffled
+  // under a hand that was already holding one.
+  Pond.__sceneryBuilt = true;
 }
 
 // keep every backing buffer in step with the window
@@ -333,8 +676,16 @@ function fit(initial) {
   const st = Pond.state;
   const cssW = Math.max(120, canvas.clientWidth || window.innerWidth || 800);
   const cssH = Math.max(120, canvas.clientHeight || window.innerHeight || 600);
-  const w = clamp(Math.round(cssW / st.pixelSize), 120, 1200);
-  const h = clamp(Math.round(cssH / st.pixelSize), 120, 1200);
+  let w = Math.round(cssW / st.pixelSize);
+  let h = Math.round(cssH / st.pixelSize);
+  // clamp both by the same factor: clamping them independently stretched the
+  // pond vertically on a landscape phone, where the height hits the floor first
+  const lo = 120;
+  const hi = 1200;
+  const grow = Math.max(lo / w, lo / h);
+  if (grow > 1) { w = Math.round(w * grow); h = Math.round(h * grow); }
+  const shrink = Math.min(hi / w, hi / h);
+  if (shrink < 1) { w = Math.round(w * shrink); h = Math.round(h * shrink); }
   const world = Pond.world;
   const oldW = world.res.x;
   const oldH = world.res.y;
@@ -406,12 +757,87 @@ function panelLabel(id, text) {
   if (el) el.textContent = text;
 }
 
+function installPanelChrome() {
+  const sheet = document.getElementById("panel");
+  const settings = document.getElementById("p-settings");
+  const grab = document.getElementById("p-grab");
+  if (settings && sheet) {
+    settings.addEventListener("click", () => {
+      sheet.hidden = !sheet.hidden;
+      settings.classList.toggle("on", !sheet.hidden);
+      // one panel at a time: on a phone they dock to the same corner
+      const adv = document.getElementById("advanced");
+      const advBtn = document.getElementById("p-advanced");
+      if (!sheet.hidden) $("#hint").addClass("hidden");
+      if (!sheet.hidden && adv) {
+        adv.hidden = true;
+        if (advBtn) advBtn.classList.remove("on");
+      }
+    });
+  }
+  const snd = document.getElementById("p-sound");
+  if (snd) {
+    snd.addEventListener("click", () => {
+      Sound.setEnabled(!Sound.enabled);
+      snd.classList.toggle("on", Sound.enabled);
+      snd.textContent = Sound.enabled
+        ? (Pond.state.touch ? "sound" : "Sound on")
+        : "Sound";
+      if (Sound.enabled) Sound.plop(0.9);
+    });
+  }
+  const advBtn = document.getElementById("p-advanced");
+  const advSheet = document.getElementById("advanced");
+  if (advBtn && advSheet) {
+    advBtn.addEventListener("click", () => {
+      advSheet.hidden = !advSheet.hidden;
+      advBtn.classList.toggle("on", !advSheet.hidden);
+      if (!advSheet.hidden) {
+        $("#hint").addClass("hidden");
+        refreshAdvanced();
+        const basic = document.getElementById("panel");
+        const basicBtn = document.getElementById("p-settings");
+        if (basic) {
+          basic.hidden = true;
+          if (basicBtn) basicBtn.classList.remove("on");
+        }
+      }
+    });
+  }
+  if (grab) {
+    grab.addEventListener("click", () => {
+      const on = !(Pond.state.grabEnabled !== false);
+      Pond.state.grabEnabled = on;
+      grab.textContent = on ? "grab: on" : "grab: off";
+      grab.classList.toggle("on", !on);
+    });
+  }
+  // clicking off the sheet closes it
+  document.addEventListener("pointerdown", (e) => {
+    if (!sheet || sheet.hidden) return;
+    if (sheet.contains(e.target) || (settings && settings.contains(e.target))) return;
+    sheet.hidden = true;
+    if (settings) settings.classList.remove("on");
+  }, true);
+}
+
 function refreshPanel() {
   const st = Pond.state;
-  panelLabel("p-koi", String(st.koiCount));
+  panelLabel("p-koi", String(koiTotal()));
   panelLabel("p-green", String(Pond.greenery || 1));
   const g = document.getElementById("p-grab");
-  if (g) g.textContent = "grab: " + (CONFIG.pads.grabbable ? "on" : "off");
+  if (g) {
+    g.textContent = Pond.state.touch
+      ? (CONFIG.pads.grabbable ? "grab" : "grab off")
+      : "grab: " + (CONFIG.pads.grabbable ? "on" : "off");
+  }
+  refreshAdvanced();
+  panelLabel("p-bloom", CONFIG.bloom.strength.toFixed(2));
+  panelLabel("p-glow", CONFIG.bloom.glow.toFixed(2));
+  panelLabel("p-thresh", CONFIG.bloom.threshold.toFixed(2));
+  panelLabel("p-spread", CONFIG.bloom.spread.toFixed(1));
+  const l = document.getElementById("p-light");
+  if (l) l.textContent = "bloom: " + (CONFIG.bloom.enabled ? "on" : "off");
 }
 
 // Greenery is the floating mats: more of them means a greener pond. Rebuilt
@@ -419,8 +845,11 @@ function refreshPanel() {
 function setGreenery(level) {
   const lv = clamp(Math.round(level * 4) / 4, 0.25, 2.5);
   Pond.greenery = lv;
-  const base = Pond.__matBase || [];
   const mats = Pond.scenery.surfaceMoss;
+  // the baseline is captured whenever it is missing: if the panel was wired
+  // before the scenery existed, an empty cache silently made this a no-op
+  if (!Pond.__matBase || !Pond.__matBase.length) Pond.__matBase = mats.slice();
+  const base = Pond.__matBase;
   if (!base.length) { refreshPanel(); return; }
   const rand = Pond.panelRand || (Pond.panelRand = new Rand(CONFIG.seed ^ 0x51ed));
   const target = Math.round(base.length * lv);
@@ -433,18 +862,139 @@ function setGreenery(level) {
   refreshPanel();
 }
 
+// ---- advanced settings ----------------------------------------------------
+// Everything here mutates CONFIG and then either rebuilds the school or the
+// scenery, so the pond you see always matches the numbers on the panel.
+function advStep(key, step) {
+  const K = CONFIG.koi;
+  switch (key) {
+    case "size":
+      K.sizeScale = clamp((K.sizeScale || 1) + step, 0.5, 2.0);
+      rebuildSchool();
+      return;
+    case "small":
+      K.smallCount = Math.round(clamp((K.smallCount || 0) + step, 0, 24));
+      K.count = K.maxCount = (K.varieties ? Object.values(K.varieties).reduce((a, b) => a + b, 0) : 24) + K.smallCount;
+      rebuildSchool();
+      return;
+    case "greenery":
+      setGreenery((Pond.greenery || 1) + step);
+      return;
+    case "duckweed":
+      setDuckweed((CONFIG.duckweed.level || 1) + step);
+      return;
+    case "flowers":
+      CONFIG.pads.flowerChance = clamp((CONFIG.pads.flowerChance || 0.5) + step, 0, 1);
+      buildSceneryFor(Pond.world);
+      Pond.__matBase = Pond.scenery.surfaceMoss.slice();
+      refreshPanel();
+      return;
+    default:
+      break;
+  }
+  if (key.indexOf("v:") === 0) {
+    const name = key.slice(2);
+    const v = CONFIG.koi.varieties || (CONFIG.koi.varieties = {});
+    const next = Math.round(clamp((v[name] || 0) + step, 0, 16));
+    // at least one koi has to stay in the water
+    if (next === 0 && koiTotal() - (v[name] || 0) < 1) return;
+    v[name] = next;
+    const big = Object.values(v).reduce((a, b) => a + b, 0);
+    CONFIG.koi.count = CONFIG.koi.maxCount = big + (CONFIG.koi.smallCount || 0);
+    rebuildSchool();
+  }
+}
+
+function refreshAdvanced() {
+  const K = CONFIG.koi;
+  const set = (id, txt) => { const el = document.getElementById(id); if (el) el.textContent = txt; };
+  set("a-size", (K.sizeScale || 1).toFixed(2));
+  set("a-count", String(koiTotal()));
+  const sc = document.getElementById("s-count");
+  if (sc && document.activeElement !== sc) sc.value = String(koiTotal());
+  set("a-small", String(K.smallCount || 0));
+  set("a-green", (Pond.greenery || 1).toFixed(2));
+  set("a-duck", (CONFIG.duckweed.level || 1).toFixed(2));
+  set("a-flowers", Math.round((CONFIG.pads.flowerChance || 0.5) * 100) + "%");
+  const v = K.varieties || {};
+  for (const name of Object.keys(v)) set("a-" + name, String(v[name]));
+}
+
+// Duckweed level: rebuild the rafts from the original set so the pond keeps the
+// shapes it had, just more or fewer of them.
+function setDuckweed(level) {
+  const lv = clamp(Math.round(level * 4) / 4, 0, 3);
+  CONFIG.duckweed.level = lv;
+  const base = Pond.__duckBase && Pond.__duckBase.length
+    ? Pond.__duckBase
+    : (Pond.__duckBase = Pond.scenery.duckweed.slice());
+  const list = Pond.scenery.duckweed;
+  const target = Math.round(base.length * lv);
+  list.length = 0;
+  const rand = Pond.panelRand || (Pond.panelRand = new Rand(CONFIG.seed ^ 0x51ed));
+  for (let i = 0; i < target; i++) {
+    const src = base[i % base.length];
+    const pt = Pond.world.pond.randomPoint(rand, 0.86, 0.08);
+    list.push({ ...src, x: pt.x, y: pt.y, size: src.size * rand.range(0.9, 1.15) });
+  }
+  refreshPanel();
+}
+
 function wirePanel() {
   if (Pond.__panelWired) return;
   if (!Pond.scenery || !Pond.scenery.surfaceMoss || !Pond.state) return;
   Pond.__panelWired = true;
   Pond.__matBase = Pond.scenery.surfaceMoss.slice();
+  $(document).on("input", "#advanced input.slider", function () {
+    const key = $(this).attr("data-adv");
+    const val = Number(this.value);
+    if (key === "count") setKoiTotal(val);
+    refreshAdvanced();
+  });
+  $(document).on("click", "#advanced .abtn", function () {
+    const key = $(this).attr("data-adv");
+    const step = Number($(this).attr("data-step"));
+    advStep(key, step);
+    refreshAdvanced();
+    setTimeout(() => { refreshAdvanced(); }, 180);
+  });
   $(document).on("click", "#panel .sbtn", function () {
     const key = $(this).attr("data-key");
     const gr = $(this).attr("data-greenery");
+    const bloomStep = $(this).attr("data-bloom");
+    const glowStep = $(this).attr("data-glow");
+    const threshStep = $(this).attr("data-thresh");
+    const spreadStep = $(this).attr("data-spread");
     if (key !== undefined) {
       document.dispatchEvent(new KeyboardEvent("keydown", { key: key, bubbles: true }));
       window.dispatchEvent(new KeyboardEvent("keydown", { key: key, bubbles: true }));
       setTimeout(refreshPanel, 80);
+      return;
+    }
+    if (bloomStep !== undefined) {
+      CONFIG.bloom.strength = clamp(CONFIG.bloom.strength + Number(bloomStep), 0, 2);
+      refreshPanel();
+      return;
+    }
+    if (glowStep !== undefined) {
+      CONFIG.bloom.glow = clamp(CONFIG.bloom.glow + Number(glowStep), 0, 2);
+      refreshPanel();
+      return;
+    }
+    if (threshStep !== undefined) {
+      CONFIG.bloom.threshold = clamp(CONFIG.bloom.threshold + Number(threshStep), 0.1, 1.4);
+      refreshPanel();
+      return;
+    }
+    if (spreadStep !== undefined) {
+      CONFIG.bloom.spread = clamp(CONFIG.bloom.spread + Number(spreadStep), 0.4, 5);
+      CONFIG.bloom.glowSpread = CONFIG.bloom.spread * 1.55;
+      refreshPanel();
+      return;
+    }
+    if (this.id === "p-light") {
+      CONFIG.bloom.enabled = !CONFIG.bloom.enabled;
+      refreshPanel();
       return;
     }
     if (gr) {
@@ -457,7 +1007,7 @@ function wirePanel() {
         Pond.state.dragPad = null;
         Pond.state.hoverPad = null;
       }
-      Sound.plop(0.45);
+      Sound.plop(0.9);
     }
     refreshPanel();
   });
@@ -467,31 +1017,41 @@ function wirePanel() {
 // ------------------------------------------------------------------ input
 
 // THE one screen-to-world conversion. Everything that needs to know where the
-// pointer is uses this, and it takes its scale from the same world resolution
-// the renderer draws with, so the two cannot disagree. The old version mixed
-// the canvas rectangle's ratio with raw canvas pixels and never divided by the
-// pixel size; it only worked when the backing store happened to equal the CSS
-// size, which is exactly the kind of accident that hides for hours.
+// pointer is comes through here. The canvas is measured on every call, because
+// a cached rectangle is only correct until the window is resized, the page is
+// zoomed, the canvas moves, or a device pixel ratio changes. A stale rectangle
+// is a pad that answers somewhere other than where you are pointing.
 function pointerScale(canvas) {
   const rect = canvas.getBoundingClientRect();
   const res = (Pond.world && Pond.world.res) || { x: canvas.width, y: canvas.height };
-  Pond.state.kx = res.x / rect.width;
-  Pond.state.ky = res.y / rect.height;
+  Pond.state.kx = rect.width ? res.x / rect.width : 1;
+  Pond.state.ky = rect.height ? res.y / rect.height : 1;
   Pond.state.rect = { left: rect.left, top: rect.top, width: rect.width, height: rect.height };
   return Pond.state.rect;
 }
 
-function pointerPos(canvas, x, y) {
-  const rect = Pond.state.rect || pointerScale(canvas);
+// Client coordinates to pond coordinates. The canvas rectangle is measured
+// here, on every event, and both axes use their own ratio: the renderer maps
+// the whole canvas onto the whole backing store, so that is the only ratio
+// that describes the drawing. No element offsets are involved, which is what
+// makes this the same arithmetic the renderer did, run backwards.
+function pointerWorld(canvas, ev) {
+  const rect = canvas.getBoundingClientRect();
   const res = (Pond.world && Pond.world.res) || { x: canvas.width, y: canvas.height };
-  // Each axis gets its own ratio. The renderer scales y by res.y / viewport
-  // height, and using the x ratio for y was off by 8 percent on a non-square
-  // window, which is about one pad radius at mid screen: presses near a pad's
-  // centre just barely landed, and everything else missed.
+  const w = rect.width || canvas.clientWidth || 1;
+  const h = rect.height || canvas.clientHeight || 1;
+  Pond.state.kx = res.x / w;
+  Pond.state.ky = res.y / h;
+  Pond.state.rect = { left: rect.left, top: rect.top, width: rect.width, height: rect.height };
   return {
-    x: (x - rect.left) * (res.x / rect.width),
-    y: (y - rect.top) * (res.y / rect.height),
+    x: (ev.clientX - rect.left) * Pond.state.kx,
+    y: (ev.clientY - rect.top) * Pond.state.ky,
   };
+}
+
+// same conversion from plain client coordinates, used by the boot check
+function pointerPos(canvas, clientX, clientY) {
+  return pointerWorld(canvas, { clientX: clientX, clientY: clientY });
 }
 
 // Boot check. Round trips the pointer conversion through world and back, then
@@ -518,19 +1078,48 @@ function grabSelfTest() {
   report.checks.push({ what: "pointer round trip", errorPx: +err.toFixed(2), pass: err < 1 });
   if (err >= 1) report.ok = false;
   const half = pad.size * 0.5;
-  const centreHit = findPadAt(pad.x, pad.y, 1.0);
-  const centre = centreHit === pad;
-  // near the rim a neighbouring pad can legitimately be nearer, so the only
-  // thing that must hold is that SOME pad answers. Requiring this exact pad
-  // here was the test's own bug, not the grab's.
-  const rim = [0, 90, 180, 270].map((a) => {
+  const centreHit = findPadAt(pad.x, pad.y);
+  // With pixel-exact hit testing the leaf answers where it is painted. The
+  // notch is a real hole in the leaf, so a rim probe can land in it: most of
+  // the rim must answer, not all of it.
+  const centre = centreHit !== null;
+  const rim = [0, 45, 90, 135, 180, 225, 270, 315].map((a) => {
     const rad = (a * Math.PI) / 180;
-    const hit = findPadAt(pad.x + Math.cos(rad) * half * 0.85, pad.y + Math.sin(rad) * half * 0.85, 1.0);
+    const hit = findPadAt(pad.x + Math.cos(rad) * half * 0.82, pad.y + Math.sin(rad) * half * 0.82);
     return { angle: a, pass: hit !== null, samePad: hit === pad };
   });
-  report.checks.push({ what: "hit test at centre", pass: centre });
-  report.checks.push({ what: "hit test near rim", pass: rim.every((r) => r.pass), detail: rim });
-  if (!centre || !rim.every((r) => r.pass)) report.ok = false;
+  report.checks.push({ what: "hit test at centre", pass: centre, samePad: centreHit === pad });
+  report.checks.push({
+    what: "hit test near rim",
+    pass: rim.filter((r) => r.pass).length >= 6,
+    detail: rim,
+  });
+  if (!centre || rim.filter((r) => r.pass).length < 6) report.ok = false;
+
+  // Direction check: press the leaf and pull the pointer down. Pond y counts
+  // downward, so the pad must move down by the same amount. This is the check
+  // that fails loudly if a drag is ever wired the wrong way round.
+  let dir = null;
+  if (!Pond.state.dragPad) {
+    handlePointerDown(pad.x, pad.y);
+    const grabbedPad = Pond.state.grab ? Pond.state.grab.pad : null;
+    if (grabbedPad) {
+      const from = { x: grabbedPad.x, y: grabbedPad.y, homeX: grabbedPad.homeX, homeY: grabbedPad.homeY };
+      handlePointerMove(pad.x, pad.y + 12);
+      dir = { from: +from.y.toFixed(1), to: +grabbedPad.y.toFixed(1), down: grabbedPad.y > from.y + 6 };
+      handlePointerUp();
+      grabbedPad.x = from.x;
+      grabbedPad.y = from.y;
+      grabbedPad.homeX = from.homeX;
+      grabbedPad.homeY = from.homeY;
+      grabbedPad.driftX = 0;
+      grabbedPad.driftY = 0;
+    }
+  }
+  if (dir) {
+    report.checks.push({ what: "drag direction", pass: dir.down, detail: dir });
+    if (!dir.down) report.ok = false;
+  }
 
   let el = document.getElementById("grab-warning");
   if (!report.ok) {
@@ -562,7 +1151,7 @@ function hitGrid(padIndex, step, span) {
   for (let dy = -span; dy <= span; dy += step) {
     let row = "";
     for (let dx = -span; dx <= span; dx += step) {
-      const hit = findPadAt(pad.x + dx, pad.y + dy, 1.0) === pad;
+      const hit = findPadAt(pad.x + dx, pad.y + dy) === pad;
       row += hit ? "#" : ".";
     }
     out.cells.push(row);
@@ -591,18 +1180,64 @@ function handleWaterClick(x, y) {
 function callFish(x, y) {
   const world = Pond.world;
   const call = world.call;
+  const C = CONFIG.callResponse;
   call.x = x;
   call.y = y;
   call.age = 0;
-  call.duration = 5.5;
-  call.radius = Math.max(world.res.x, world.res.y) * 0.42;
+  call.duration = 10;
   call.active = true;
+  // Three concentric rings round the press. One ring cannot hold this many koi:
+  // twenty-six fish of fifty pixels need a circumference of about 1400 px, which
+  // is wider than the pond. Three rings fit, and each fish gets a fixed slot on
+  // one of them, so the shoal settles into rings instead of drifting.
+  call.ringBase = 46;
+  call.ringStep = 20;
+  call.spin = 0.35;
+  // The ring's phase carries over between presses. Resetting it to zero put
+  // every slot back at its starting angle, so each click sent the whole shoal
+  // sideways at once and it never settled into a turning ring.
+  call.phase = call.phase || 0;
+  // Four rings, not three: at one body length of spacing a 46 px ring holds
+  // about six koi, so twenty-six need four rings to sit on.
+  const bands = 4;
+  const big = [];
   for (let i = 0; i < world.count; i++) {
     const k = world.koi[i];
+    if (!k.small) big.push(k);
+  }
+  const perBand = Math.ceil(big.length / bands);
+  call.slotsInBand = [0, 0, 0, 0];
+  for (let i = 0; i < big.length; i++) {
+    const k = big[i];
+    const band = i % bands;
+    k.callBand = band;
+    k.callSlot = call.slotsInBand[band]++;
     const d = Math.hypot(k.x - x, k.y - y);
-    k.callDelay = 0.08 + (d / call.radius) * 0.7 + k.rand.unit() * 0.25 + (1 - k.reactivity) * 0.5;
+    const t = Math.pow(clamp(d / C.distanceAtMaximumDelay, 0, 1), C.distanceExponent);
+    // they start up the moment you press, even before their turn to move
+    k.inDeep = false;
+    k.depthTarget = 0.08;
+    k.depthTimer = Math.max(k.depthTimer, 8);
+    k.callDelay = C.minimumDelaySeconds + t * C.maximumDistanceDelaySeconds +
+      k.rand.range(0, C.randomJitterSeconds) + (1 - k.reactivity) * C.temperamentDelaySeconds;
+    // A fish already circling stays circling when you press again: only its
+    // ring slot moves. Restarting everyone on every press meant a shoal that
+    // was permanently commuting and never settled.
+    if (k.responded && d < 150) {
+      k.callDelay = 0;
+    } else {
+      k.responded = false;
+      k.callResponseAge = 0;
+    }
+  }
+  // the small orange fish are not koi and do not join
+  for (let i = 0; i < world.count; i++) {
+    const k = world.koi[i];
+    if (!k.small) continue;
+    k.callDelay = 1e9;
     k.responded = false;
   }
+  void perBand;
 }
 
 function scatter() {
@@ -619,7 +1254,7 @@ function scatter() {
     school.targetX = p.x;
     school.targetY = p.y;
   }
-  Sound.plop(0.7);
+  Sound.plop(1.0);
 }
 
 const scatterRand = new Rand(0x51ed270b);
@@ -635,50 +1270,65 @@ function feed(x, y) {
     });
   }
   spawnRipple("splash", x, y, {});
-  Sound.plop(0.6);
+  Sound.plop(0.9);
 }
 
-// Where a pad actually is on screen includes its bob. Drawing and grabbing must
-// use the same number, and the bob is capped so the two can never drift apart
-// into a big invisible grab area next to the pad you can see.
+// Where a pad actually is on screen includes its bob. Drawing and grabbing use
+// this same number.
 function padBobAt(pad, time) {
   return clamp(waterBobAt(pad.x, pad.y, time) * 0.6, -1.2, 1.2);
 }
 
-// slack is how forgiving the grab is: 1 is the pad's own disc
-function findPadAt(x, y, slack) {
-  // one switch, and the whole grab apparatus is off: press, hover, sweep,
-  // drag and the keyboard nudge all go through here or check this flag
-  if (!CONFIG.pads.grabbable) return null;
-  const reach = slack === undefined ? 1.05 : slack;
-  const pads = Pond.scenery.pads;
-  let best = null;
-  let bestD = 1e9;
-  for (const pad of pads) {
-    const py = pad.y + padBobAt(pad, Pond.world.time);
-    const d = Math.hypot(pad.x - x, py - y);
-    // exactly the painted pad, plus three pixels of edge. No invisible margin:
-    // a press that grabs something you cannot see is worse than a press that
-    // misses, because the pad then moves somewhere you were not looking.
-    if (d <= pad.size * 0.5 + 3 && d < bestD) {
-      best = pad;
-      bestD = d;
-    }
-  }
-  // moss mats are scenery: they drift, they get pushed by the water, and
-  // they are never grabbable, so a mat can never steal a pad's grab again
-  return best;
+// The pad's painted pixels, as a 1/0 map. The textures are alpha-hardened to 0
+// or 255 when they are painted, so this is the leaf itself and nothing else.
+function padAlphaMap(pad) {
+  if (pad.alphaMap) return pad.alphaMap;
+  const w = pad.tex.width;
+  const h = pad.tex.height;
+  const data = pad.tex.getContext("2d").getImageData(0, 0, w, h).data;
+  const map = new Uint8Array(w * h);
+  for (let i = 0, p = 0; i < data.length; i += 4, p++) map[p] = data[i + 3] > 127 ? 1 : 0;
+  pad.alphaMap = map;
+  return map;
 }
 
-// the nearest pad to a point, within a short reach
-function nearestPad(x, y, reach) {
-  let best = null;
-  let bestD = reach;
-  for (const pad of Pond.scenery.pads) {
-    const d = Math.hypot(pad.x - x, pad.y - y);
-    if (d < bestD) { best = pad; bestD = d; }
+// Is this point on the painted leaf? The point is turned back through the same
+// rotation the sprite is drawn with, then the pad's own texture alpha answers.
+// This is why there is no invisible grab area: a press either lands on green
+// paint or it lands on water, exactly as it looks.
+function padContainsPoint(pad, x, y, time) {
+  const bob = padBobAt(pad, time);
+  const dx = x - pad.x;
+  const dy = y - (pad.y + bob);
+  // inverse of the sprite quad's rotation: lp = R(-rot) * (world - pos)
+  const c = Math.cos(pad.rot);
+  const s = Math.sin(pad.rot);
+  const w = pad.tex.width;
+  const h = pad.tex.height;
+  // the sprite is drawn at pad.size, so a world-pixel offset scales by w/size
+  // into texels. Indexing by the texture's own size keeps the test exact even
+  // if a texture is ever painted at a size that differs from the pad's own.
+  const sx = (dx * c + dy * s) * (w / pad.size) + w * 0.5;
+  const sy = (-dx * s + dy * c) * (h / pad.size) + h * 0.5;
+  if (sx < 0 || sy < 0 || sx >= w || sy >= h) return false;
+  const map = padAlphaMap(pad);
+  return map[(sy | 0) * w + (sx | 0)] === 1;
+}
+
+function findPadAt(x, y) {
+  // one switch, and the whole grab apparatus is off: press, hover, drag and
+  // the keyboard nudge all go through here or check this flag
+  if (!CONFIG.pads.grabbable) return null;
+  const pads = Pond.scenery.pads;
+  const time = Pond.world.time;
+  // Pads are painted in array order, so a later pad sits over an earlier one.
+  // The topmost pad whose paint is under the point is the only one you can
+  // actually see there, so that is the one that answers a press and the one
+  // that lights up. No radius, no slack, no shadow: the leaf is the target.
+  for (let i = pads.length - 1; i >= 0; i--) {
+    if (padContainsPoint(pads[i], x, y, time)) return pads[i];
   }
-  return best;
+  return null;
 }
 
 function handlePointerDown(x, y) {
@@ -686,26 +1336,13 @@ function handlePointerDown(x, y) {
   st.pointer.down = true;
   st.pointer.x = x;
   st.pointer.y = y;
-  let pad = findPadAt(x, y);
-  if (!pad && CONFIG.pads.grabbable) {
-    // a near miss takes the nearest pad and brings it to the pointer, so the
-    // thing you grabbed is under your hand from the first frame. The pad is
-    // never left sitting somewhere you were not looking.
-    const near = nearestPad(x, y, 12);
-    if (near) {
-      near.x = clamp(x, 5, Pond.world.res.x - 5);
-      near.y = clamp(y, 5, Pond.world.res.y - 5);
-      near.homeX = near.x;
-      near.homeY = near.y;
-      near.driftX = 0;
-      near.driftY = 0;
-      pad = near;
-    }
-  }
+  // A press takes the topmost pad whose disc is under the pointer, and nothing
+  // else. The pad keeps the exact offset it had when it was picked up, so it
+  // does not jump to the cursor on the first move.
+  const pad = findPadAt(x, y);
   if (pad) {
     pad.held = true;
-    pad.grabX = pad.x - x;
-    pad.grabY = pad.y - y;
+    st.grab = { pad, ox: pad.x - x, oy: pad.y - y };
     st.dragPad = pad;
     return;
   }
@@ -717,26 +1354,30 @@ function handlePointerMove(x, y) {
   const world = Pond.world;
   st.pointer.x = x;
   st.pointer.y = y;
-  if (st.dragPad) {
-    const pad = st.dragPad;
-    const px = st.pixelSize;
-    // The pad simply moves by the cursor's own screen delta, step by step.
-    // Nothing is reconstructed from a stored anchor, so there is no arithmetic
-    // left that could send the pad the other way: whatever direction the
-    // cursor travelled on screen is the direction the pad travels.
-    const css = st.pointerCss || [x * px, y * px];
-    const last = st.lastDragCss || css;
-    const nx = clamp(pad.x + (css[0] - last[0]) / px, 4, world.res.x - 4);
-    const ny = clamp(pad.y + (css[1] - last[1]) / px, 4, world.res.y - 4);
-    pad.grabX = pad.x - x;
-    pad.grabY = pad.y - y;
-    st.lastDragCss = [css[0], css[1]];
-    probeDragSample(css[0], css[1], x, y, pad);
+  const grab = st.grab;
+  if (grab && grab.pad) {
+    const pad = grab.pad;
+    // The pad is placed at the pointer plus the offset it was grabbed with.
+    // Position, not a running delta: a drag can never drift, and it can never
+    // come out reversed, because there is no direction to get wrong. If a
+    // move event is missed or arrives twice, the next one still lands the pad
+    // exactly where the hand is.
+    const wantX = x + grab.ox;
+    const wantY = y + grab.oy;
+    const margin = pad.size * 0.5 + 1;
+    const nx = clamp(wantX, margin, world.res.x - margin);
+    const ny = clamp(wantY, margin, world.res.y - margin);
+    // The grab offset stays exactly as it was on the press. At the frame edge
+    // the leaf holds still while the hand travels, and it picks the hand up
+    // again the moment the pointer comes back inside: the same offset is still
+    // the right one. Rebasing the offset here made a pad jump by the distance
+    // the hand had gone past the edge.
     const moved = Math.hypot(nx - pad.x, ny - pad.y);
     pad.x = nx;
     pad.y = ny;
     pad.driftX = 0;
     pad.driftY = 0;
+    probeDragSample(x, y, pad);
     if (moved > 0.2 && world.time - st.lastWake > 0.11) {
       st.lastWake = world.time;
       spawnRipple("wake", pad.x, pad.y, { scale: 1.1 });
@@ -744,20 +1385,6 @@ function handlePointerMove(x, y) {
     return;
   }
   if (!st.pointer.down) return;
-  // a drag is in flight and a pad is under the pointer: take it. If a grab
-  // ever gets lost, the pad must not start moving against your hand; instead
-  // the pointer keeps hold of whatever pad it is over.
-  const under = findPadAt(x, y, 1.3);
-  if (under) {
-    under.held = true;
-    under.grabX = under.x - x;
-    under.grabY = under.y - y;
-    under.grabScreen = [under.x * st.pixelSize, under.y * st.pixelSize];
-    st.grabCssAt = st.pointerCss || [x * st.pixelSize, y * st.pixelSize];
-    st.dragPad = under;
-    probeDragStart(st.pointerCss ? st.pointerCss[0] : x, st.pointerCss ? st.pointerCss[1] : y, x, y, under);
-    return;
-  }
   // dragging across open water: a line of small rings and a nudge to
   // whichever koi are right there
   const dx = x - st.lastDragSpawn.x;
@@ -789,6 +1416,7 @@ const SHADOW_TINT = CONFIG.shadows.tint;
 function handlePointerUp() {
   const st = Pond.state;
   st.pointer.down = false;
+  st.grab = null;
   if (st.dragPad) {
     const pad = st.dragPad;
     pad.held = false;
@@ -800,11 +1428,9 @@ function handlePointerUp() {
     pad.driftY = 0;
     pad.vx = 0;
     pad.vy = 0;
-    pad.grabScreen = null;
-    st.grabCssAt = null;
     // letting go nudges the water once
     spawnRipple("splash", pad.x, pad.y, { scale: 0.9 });
-    Sound.plop(0.5);
+    Sound.plop(0.85);
     st.dragPad = null;
   }
   st.lastDragSpawn.x = -999;
@@ -830,8 +1456,8 @@ function handleKey(key) {
     scatter();
     return true;
   }
-  if (key === "[") return setKoiCount(st.koiCount - 2);
-  if (key === "]") return setKoiCount(st.koiCount + 2);
+  if (key === "[") return setKoiTotal(koiTotal() - 1);
+  if (key === "]") return setKoiTotal(koiTotal() + 1);
 // one pixel scale now: see CONFIG.pixelSize
 // one pixel scale now: see CONFIG.pixelSize
 // one pixel scale now: see CONFIG.pixelSize
@@ -849,7 +1475,7 @@ function handleKey(key) {
     let i = pads.indexOf(st.selPad);
     i = i < 0 ? 0 : (i + (key === "." ? 1 : -1) + pads.length) % pads.length;
     st.selPad = pads[i];
-    Sound.plop(0.25);
+    Sound.plop(0.55);
     return true;
   }
   if (key.indexOf("Arrow") === 0) {
@@ -894,7 +1520,11 @@ function handleKey(key) {
 // the lot back. Markers on screen show a click and where its ripple went:
 // cyan where you clicked, green where the ripple landed, red if they differ.
 const PROBE = {
-  on: true,
+  // Off by default: this is a debugging surface, and the pointer ring it draws
+  // is a second circle on screen that follows the mouse. In normal use it reads
+  // as a broken cursor and it is one more thing that can disagree with the
+  // pond. Press 'p' or call __pond.probeToggle() to turn it back on.
+  on: false,
   max: 240,
   clicks: [],
   ripples: [],
@@ -1019,18 +1649,23 @@ function probeTick() {
 // dragged is actually DRAWN (measured from the pixels) versus where the
 // simulation thinks it is. Those two diverging is invisible to every test
 // that only reads the model, which is how this bug hid for so long.
-// The page draws its own pointer ring. A desktop pet sitting on the arrow
-// hides the one the OS draws, and then you aim with the pet, which lags and
-// hangs below the real pointer. This ring is always exactly where the pointer
-// the canvas sees is, so you aim with the ring.
+// Debug aid only, and only while the probes are on: a ring at the pointer the
+// page itself received. It is not the cursor, and in normal use it reads as a
+// second, wrong cursor sitting near the real one, so it stays off unless the
+// probes are explicitly switched on.
 function markPointer(cssX, cssY) {
+  if (!PROBE.on) {
+    const stale = document.getElementById("pointer-ring");
+    if (stale) stale.remove();
+    return;
+  }
   let el = document.getElementById("pointer-ring");
   if (!el) {
     el = document.createElement("div");
     el.id = "pointer-ring";
     el.style.cssText = "position:fixed;width:84px;height:84px;margin:-42px 0 0 -42px;border-radius:50%;"
       + "border:2px solid rgba(255,255,255,.85);box-shadow:0 0 0 1px rgba(0,0,0,.35) inset;"
-      + "pointer-events:none;z-index:80;mix-blend-mode:difference;transition:transform .06s linear";
+      + "pointer-events:none;z-index:80;mix-blend-mode:difference";
     document.body.appendChild(el);
   }
   el.style.left = cssX + "px";
@@ -1108,10 +1743,9 @@ function probeReadout() {
     + "drawn vs model " + (d && d.d ? d.d + "px (" + d.dx + "," + d.dy + ")" : "-");
 }
 
-function probeDragStart(cssX, cssY, worldX, worldY, pad) {
+function probeDragStart(worldX, worldY, pad) {
   PROBE.drag = {
     t: +Pond.world.time.toFixed(2),
-    grabCss: [Math.round(cssX), Math.round(cssY)],
     grabWorld: [+worldX.toFixed(1), +worldY.toFixed(1)],
     padStart: [+pad.x.toFixed(1), +pad.y.toFixed(1)],
     padKindR: pad.r,
@@ -1121,11 +1755,10 @@ function probeDragStart(cssX, cssY, worldX, worldY, pad) {
   PROBE.counters.drags = (PROBE.counters.drags || 0) + 1;
 }
 
-function probeDragSample(cssX, cssY, worldX, worldY, pad) {
+function probeDragSample(worldX, worldY, pad) {
   const d = PROBE.drag;
   if (!d || d.samples.length > 40) return;
   d.samples.push({
-    css: [Math.round(cssX), Math.round(cssY)],
     world: [+worldX.toFixed(1), +worldY.toFixed(1)],
     pad: [+pad.x.toFixed(1), +pad.y.toFixed(1)],
   });
@@ -1135,15 +1768,19 @@ function probeDragEnd() {
   const d = PROBE.drag;
   if (!d) return;
   d.end = { t: +Pond.world.time.toFixed(2) };
-  const px = Pond.state.pixelSize;
   if (d.samples.length > 1) {
     const first = d.samples[0];
     const last = d.samples[d.samples.length - 1];
-    const cursorDown = last.css[1] - first.css[1];
-    const padDown = (last.pad[1] - first.pad[1]) * px;
-    d.cursorMoved = cursorDown;
-    d.padMovedOnScreen = +padDown.toFixed(1);
-    d.sameDirection = Math.sign(cursorDown) === Math.sign(padDown) || Math.abs(cursorDown) < 4;
+    // both sides in pond coordinates: the pad has to travel the same way, by
+    // the same distance, as the pointer. No pixel-size or screen-space factor
+    // sits between them any more.
+    d.pointerDx = +(last.world[0] - first.world[0]).toFixed(1);
+    d.pointerDy = +(last.world[1] - first.world[1]).toFixed(1);
+    d.padDx = +(last.pad[0] - first.pad[0]).toFixed(1);
+    d.padDy = +(last.pad[1] - first.pad[1]).toFixed(1);
+    d.followError = +Math.hypot(d.padDx - d.pointerDx, d.padDy - d.pointerDy).toFixed(2);
+    d.sameDirection = (Math.abs(d.pointerDx) < 0.5 || Math.sign(d.pointerDx) === Math.sign(d.padDx))
+      && (Math.abs(d.pointerDy) < 0.5 || Math.sign(d.pointerDy) === Math.sign(d.padDy));
     const dist = Math.hypot(d.grabWorld[0] - d.padStart[0], d.grabWorld[1] - d.padStart[1]);
     d.grabbedTheRightPad = dist <= d.padKindR + 3;
     d.grabDistance = +dist.toFixed(1);
@@ -1179,12 +1816,15 @@ function probeReport() {
     })),
     lastDrag: PROBE.drag && PROBE.drag.samples.length
       ? {
-        grabCss: PROBE.drag.grabCss, grabWorld: PROBE.drag.grabWorld, padStart: PROBE.drag.padStart,
+        grabWorld: PROBE.drag.grabWorld, padStart: PROBE.drag.padStart,
         samples: PROBE.drag.samples.length > 10
           ? PROBE.drag.samples.filter((_, i) => i % Math.ceil(PROBE.drag.samples.length / 10) === 0)
           : PROBE.drag.samples,
-        cursorMovedOnScreen: PROBE.drag.cursorMoved,
-        padMovedOnScreen: PROBE.drag.padMovedOnScreen,
+        pointerDx: PROBE.drag.pointerDx,
+        pointerDy: PROBE.drag.pointerDy,
+        padDx: PROBE.drag.padDx,
+        padDy: PROBE.drag.padDy,
+        followError: PROBE.drag.followError,
         sameDirection: PROBE.drag.sameDirection,
         grabbedTheRightPad: PROBE.drag.grabbedTheRightPad,
         grabDistance: PROBE.drag.grabDistance,
@@ -1209,32 +1849,35 @@ function installInput(canvas) {
 
   $(canvas).on("pointerdown", (ev) => {
     markPointer(ev.clientX, ev.clientY);
-    const p = pointerPos(canvas, ev.clientX, ev.clientY);
+    const p = pointerWorld(canvas, ev);
     if (ev.shiftKey) {
       feed(p.x, p.y);
       probeClick("feed", ev.clientX, ev.clientY, p.x, p.y, {});
       return;
     }
     handlePointerDown(p.x, p.y);
-    if (st.dragPad) {
-      // say so out loud: the pad lifts a little and the water answers, so a
-      // tap or a still hold is not silently ignored
-      st.dragPad.lift = 1;
-      spawnRipple("splash", st.dragPad.x, st.dragPad.y, { scale: 0.55 });
-      Sound.plop(0.35);
+    // the grab toggle in the bar is a real gate, not a label
+    if (st.dragPad && Pond.state.grabEnabled === false) {
+      st.dragPad = null;
+      st.hoverPad = null;
+      spawnRipple("mouth", p.x, p.y, { scale: 0.7 });
     }
     if (st.dragPad) {
-      // anchor the drag in screen space: where the pad is on screen and where
-      // the cursor is. From here the pad moves by the cursor's screen delta,
-      // so no world-space convention can turn the movement against your hand.
-      st.lastDragCss = [ev.clientX, ev.clientY];
+      // Say so out loud: the pad lifts and the water answers, so a tap or a
+      // still hold is not silently ignored.
+      spawnRipple("splash", st.dragPad.x, st.dragPad.y, { scale: 0.55 });
+      Sound.plop(0.95, pondPan(st.dragPad ? st.dragPad.x : p.x));
+      // Capture the pointer: every move and the release come to this canvas
+      // even when the hand runs off the edge of the window, so a drag cannot
+      // be lost halfway and leave a pad stuck to the cursor.
+      try { canvas.setPointerCapture(ev.pointerId); } catch (e) { void e; }
     }
     probeTrace("down", ev.clientX, ev.clientY, st.dragPad
       ? { hit: "pad " + padIndexOf(st.dragPad), grabDistance: +Math.hypot(st.dragPad.x - p.x, st.dragPad.y - p.y).toFixed(1) }
       : { hit: "water" });
     probeClick(st.dragPad ? "grab" : "water", ev.clientX, ev.clientY, p.x, p.y,
       st.dragPad ? { grabbed: [+st.dragPad.x.toFixed(1), +st.dragPad.y.toFixed(1)] } : {});
-    if (st.dragPad) probeDragStart(ev.clientX, ev.clientY, p.x, p.y, st.dragPad);
+    if (st.dragPad) probeDragStart(p.x, p.y, st.dragPad);
   });
   $(window).on("pointermove", (ev) => {
     // where the real pointer actually is, so a pad can light up under it. With
@@ -1244,64 +1887,51 @@ function installInput(canvas) {
     // this page is seeing your pointer at all
     PROBE.counters.moves = (PROBE.counters.moves || 0) + 1;
     markPointer(ev.clientX, ev.clientY);
-    const hp = pointerPos(canvas, ev.clientX, ev.clientY);
+    const hp = pointerWorld(canvas, ev);
     st.pointer.x = hp.x;
     st.pointer.y = hp.y;
-    st.hoverPad = st.dragPad || findPadAt(hp.x, hp.y, 1.0);
-    // Nothing under the pointer? Show the nearest pad when it is close. The
-    // pond's edge is full of green (reeds, moss, duckweed) that reads as a pad
-    // at a glance, so the pads themselves have to say where they are.
-    if (st.hoverPad) {
-      st.nearPad = null;
-    } else {
-      let best = null;
-      let bestD = 1e9;
-      for (const pad of Pond.scenery.pads) {
-        const d = Math.hypot(pad.x - hp.x, pad.y - hp.y);
-        if (d < bestD) { best = pad; bestD = d; }
-      }
-      st.nearPad = best && bestD < best.size * 1.9 ? best : null;
-    }
-    // if the button is down but this page never saw a press, something above
-    // the page ate it. Sweep onto a pad with the button held and you take it.
-    if (!st.dragPad && !st.pointer.down && ev.buttons === 1) {
-      const sweep = findPadAt(hp.x, hp.y, 1.0);
-      if (sweep) {
-        st.dragPad = sweep;
-        sweep.held = true;
-        st.lastDragCss = [Math.round(ev.clientX), Math.round(ev.clientY)];
-        probeDragStart(ev.clientX, ev.clientY, hp.x, hp.y, sweep);
-        probeTrace("sweep grab", ev.clientX, ev.clientY, { pad: padIndexOf(sweep) });
-        Sound.plop(0.3);
-      }
-    }
+    // the pad under the pointer is the pad that would answer a press, and it
+    // is the only pad that lights: what glows is exactly what you can grab
+    st.hoverPad = st.dragPad || findPadAt(hp.x, hp.y);
     // and if the button came up somewhere this page could not see, let go
     if (st.dragPad && ev.buttons === 0) {
-      if (st.dragPad) padDivergenceCheck(st.dragPad);
+      padDivergenceCheck(st.dragPad);
       probeDragEnd();
       handlePointerUp();
       return;
     }
     if (!st.pointer.down && !st.dragPad) return;
-    const p = pointerPos(canvas, ev.clientX, ev.clientY);
-    st.pointerCss = [Math.round(ev.clientX), Math.round(ev.clientY)];
     if (st.dragPad) {
       probeTrace("move (held)", ev.clientX, ev.clientY, { pad: padIndexOf(st.dragPad), padModelAt: [+st.dragPad.x.toFixed(1), +st.dragPad.y.toFixed(1)] });
     }
-    handlePointerMove(p.x, p.y);
+    handlePointerMove(hp.x, hp.y);
   });
   // only a real pointerup ends a drag; a cancel keeps the pad in hand until
   // the pointer comes back, because a mouse drag can cancel for many reasons
   $(window).on("pointerup", (ev) => {
     const last = PROBE.clicks[PROBE.clicks.length - 1];
     if (last && ev && ev.clientX !== undefined && !last.up) {
-      const up = pointerPos(document.getElementById("pond"), ev.clientX, ev.clientY);
+      const up = pointerWorld(document.getElementById("pond"), ev);
       last.up = [+up.x.toFixed(1), +up.y.toFixed(1)];
     }
     probeTrace("up", ev && ev.clientX !== undefined ? ev.clientX : -1, ev && ev.clientY !== undefined ? ev.clientY : -1, { pad: st.dragPad ? padIndexOf(st.dragPad) : null });
     if (st.dragPad) padDivergenceCheck(st.dragPad);
     probeDragEnd();
     handlePointerUp();
+    if (ev && ev.pointerId !== undefined) {
+      try { canvas.releasePointerCapture(ev.pointerId); } catch (e) { void e; }
+    }
+    // a finger that lifts is gone: no hover state is left behind on a pad it
+    // was never really resting on
+    if (ev && ev.pointerType === "touch") {
+      st.hoverPad = null;
+    }
+  });
+
+  // the pointer left the page: nothing is under it any more
+  $(canvas).on("pointerleave", () => {
+    if (Pond.state.dragPad) return;
+    Pond.state.hoverPad = null;
   });
 
   // a native drag or a text selection cancels the pointer halfway through a
@@ -1326,12 +1956,11 @@ function installInput(canvas) {
   $("#btn-koi").on("click", () => setKoiCount(st.koiCount + 2));
   $("#btn-koi-less").on("click", () => setKoiCount(st.koiCount - 2));
 
-  // the hint line steps out of the way after a while
+  // the hint line steps out of the way after a while. Only the hint: the
+  // settings panel is a control surface, and hiding it took the pad grab
+  // switch away from anyone who was still using the pond.
   window.setTimeout(() => {
-    if (!st.hidden) {
-      st.hidden = true;
-      $(".hud").addClass("hidden");
-    }
+    if (!st.hidden) $("#hint, #controls").addClass("hidden");
   }, 32000);
 }
 
@@ -1340,7 +1969,37 @@ function setSound(on) {
   st.sound = on;
   Sound.setEnabled(on);
   $("#btn-sound").text(on ? "sound: on" : "sound: off").toggleClass("on", on);
-  if (on) Sound.plop(0.6);
+  if (on) Sound.plop(0.9);
+}
+
+// The settings panel's Koi number is the sum of the advanced panel's variety
+// counts. Growing adds to the variety that is currently scarcest, shrinking takes
+// from the most common one, so the two panels can never disagree.
+function koiTotal() {
+  const v = CONFIG.koi.varieties || {};
+  return Object.values(v).reduce((a, b) => a + b, 0);
+}
+
+function setKoiTotal(n) {
+  const v = CONFIG.koi.varieties || (CONFIG.koi.varieties = {});
+  const names = Object.keys(v);
+  let want = clamp(Math.round(n), 1, 16 * names.length);
+  let total = koiTotal();
+  while (total < want) {
+    let low = names[0];
+    for (const name of names) if (v[name] < v[low]) low = name;
+    v[low] += 1;
+    total += 1;
+  }
+  while (total > want) {
+    let high = names[0];
+    for (const name of names) if (v[name] > v[high]) high = name;
+    if (v[high] <= 0) break;
+    v[high] -= 1;
+    total -= 1;
+  }
+  CONFIG.koi.count = CONFIG.koi.maxCount = koiTotal() + (CONFIG.koi.smallCount || 0);
+  rebuildSchool();
 }
 
 function setKoiCount(n) {
@@ -1360,6 +2019,40 @@ function setKoiCount(n) {
       k.depthTarget = 0.05;
     }
   }
+}
+
+// Rebuild every fish from the current config. The advanced panel calls this
+// after any change that alters how many fish there are or how big they are.
+function rebuildSchool() {
+  // coalesce: a run of clicks rebuilds once, a beat later, so holding the button
+  // cannot churn hundreds of sprites and textures
+  if (Pond.__rebuildQueued) return;
+  Pond.__rebuildQueued = setTimeout(() => {
+    Pond.__rebuildQueued = null;
+    rebuildSchoolNow();
+  }, 120);
+}
+
+function rebuildSchoolNow() {
+  const world = Pond.world;
+  for (const k of world.koi) {
+    Pond.gfx.freeTexture(k.canvas);
+    if (k.spineTex) Pond.gfx.gl.deleteTexture(k.spineTex);
+  }
+  for (const school of world.minnows) for (const m of school.fish) {
+    Pond.gfx.freeTexture(m.canvas);
+    if (m.spineTex) Pond.gfx.gl.deleteTexture(m.spineTex);
+  }
+  const school = createSchool(new Rand((CONFIG.seed ^ 0x51ed) >>> 0), world.pond, world.res);
+  Pond.school = school;
+  world.koi = school.koi;
+  world.minnows = school.minnows;
+  world.count = school.koi.length;
+  Pond.state.koiCount = world.count;
+  for (const k of world.koi) k.spineTex = Pond.gfx.makeSpineTex();
+  for (const s2 of world.minnows) for (const m of s2.fish) m.spineTex = Pond.gfx.makeSpineTex();
+  world.call.active = false;
+  refreshPanel();
 }
 
 function reseed() {
@@ -1385,6 +2078,10 @@ function reseed() {
   }
   Pond.world.minnows = createSchool(rand, world.pond, world.res).minnows;
   world.minnows = Pond.world.minnows;
+  for (const b of Pond.dragonflies) {
+    for (const f of b.frames) Pond.gfx.freeTexture(f);
+  }
+  Pond.dragonflies = createDragonflies(new Rand(st.seed ^ 0x1f83d9ab), world.res);
   Pond.butterflies = createButterflies(new Rand(st.seed ^ 0x5bf03635), world.res);
   buildSceneryFor(world);
   resetWaterField();
@@ -1405,8 +2102,31 @@ function simulate(dt) {
     pellets: world.pellets,
     call: world.call,
     onGulp: world.onGulp,
+    // stones stand in the water, so the fish need to know about them
+    stones: Pond.scenery ? Pond.scenery.steppingStones : null,
   };
+  // the water bed follows the flow field, so the pond sounds like it is moving
+  if (Sound.enabled && Pond.flow) {
+    Pond.__soundAt = (Pond.__soundAt || 0) + dt;
+    if (Pond.__soundAt > 0.1) {
+      Pond.__soundAt = 0;
+      const swell = 0.5 + 0.5 * Math.sin(time * 0.6 + 1.2);
+      Sound.setFlow(Pond.flow.energy(), swell);
+    }
+  }
+  // birds, off frame, now and then
+  if (Sound.enabled && Sound.assetsLoaded) {
+    if (Pond.__birdIn === undefined) Pond.__birdIn = 5 + Math.random() * 7;
+    Pond.__birdIn -= dt;
+    if (Pond.__birdIn <= 0) {
+      Sound.birdAt(time);
+      Pond.__birdIn = 11 + Math.random() * 20;
+    }
+  }
   world.call.age = world.call.active ? world.call.age + dt : 999;
+  if (world.call.active) {
+    world.call.phase = (world.call.phase || 0) + (world.call.spin || 0.35) * dt;
+  }
   if (world.call.active && world.call.age > world.call.duration) world.call.active = false;
 
   for (let i = 0; i < world.count; i++) world.koi[i].update(dt, simWorld);
@@ -1414,8 +2134,15 @@ function simulate(dt) {
   updatePads(dt, time, Pond.scenery.pads, world.pond);
   updateDuckweed(dt, time, Pond.scenery.duckweed, world.pond);
   updateDuckweed(dt, time, Pond.scenery.surfaceMoss, world.pond, 0.5);
-  updateClouds(dt, world.res, Pond.scenery.clouds);
+  if (Pond.scenery.hyacinths) updateDuckweed(dt, time, Pond.scenery.hyacinths, world.pond, 1.5);
   updateButterflies(dt, time, Pond.butterflies, { pond: world.pond, res: world.res, flowers: Pond.scenery.padFlowers });
+  updateDragonflies(dt, time, Pond.dragonflies, world.res);
+  updateStriders(dt, time, Pond.striders, {
+    res: world.res, koi: world.koi, count: world.count, rings: WATER_FIELD.rings,
+  });
+  updateBubbles(dt, time, world, Pond.scenery.weeds);
+  // the field itself, then everything floating rides it
+  if (Pond.flow) Pond.flow.step(dt, { koi: world.koi, count: world.count });
 
   for (let i = world.pellets.length - 1; i >= 0; i--) {
     const p = world.pellets[i];
@@ -1502,7 +2229,7 @@ function drawFrame() {
       x: (a.minX + a.maxX) / 2, y: (a.minY + a.maxY) / 2,
       w: (a.maxX - a.minX) + 8, h: (a.maxY - a.minY) + 8,
       tint: [1, 1, 1, 1 - k.depth * 0.1],
-      deepTint: k.depth * 0.32,
+      deepTint: k.depth * 0.62,
     });
   }
 
@@ -1519,7 +2246,7 @@ function drawFrame() {
         x: (a.minX + a.maxX) / 2, y: (a.minY + a.maxY) / 2,
         w: (a.maxX - a.minX) + 6, h: (a.maxY - a.minY) + 6,
         tint: [1, 1, 1, 0.96],
-        deepTint: 0.18,
+        deepTint: 0.34,
       });
     }
   }
@@ -1556,6 +2283,47 @@ function drawFrame() {
       gfx.drawSprite(bf.canvas, bf.x, bf.y + 3.2 + wobble, bf.canvas.width, bf.canvas.height, bf.rot, [0.75, 0.85, 0.9, 0.16], true);
     }
   }
+  // A dragonfly's shadow is thrown well away from it, and the higher it flies
+  // the further out and wider the shadow goes, which is the only height cue a
+  // top-down pond has.
+  for (const df of Pond.dragonflies) {
+    const gap = df.shadowGap();
+    const dso = shadowOffset(gap * 0.45);
+    const wide = 6.5 + df.z * 4.5;
+    gfx.drawSprite(blob, df.x + dso[0], df.y + gap + dso[1], wide, wide * 0.55, 0,
+      [SHADOW_TINT[0], SHADOW_TINT[1], SHADOW_TINT[2], CONFIG.shadows.butterflyAlpha * 0.85], false);
+  }
+
+  // bubbles rising through the water, and the roots of the hyacinths
+  for (const b of (world.bubbles || [])) {
+    const fade = 1 - Math.max(0, b.age - 0.8) / 0.2;
+    gfx.drawSprite(blob, b.x, b.y, b.size * 1.6, b.size * 1.6, 0, [0.82, 0.95, 1, 0.55 * fade], false);
+  }
+  if (scenery.hyacinths) {
+    for (const hy of scenery.hyacinths) {
+      const sway = Math.sin(time * 1.4 + hy.x * 0.1) * 1.2;
+      for (let i = -1; i <= 1; i++) {
+        for (let k = 1; k <= 4; k++) {
+          const y = hy.y + 4 + k * 2.4;
+          gfx.drawSprite(blob, hy.x + i * 2.2 + sway * (k / 4), y, 1.2, 2.6, 0, [0.72, 0.85, 0.62, 0.5], false);
+        }
+      }
+    }
+  }
+  // the clay pot, under the surface so the water bends and tints it
+  if (scenery.pot) {
+    const pso = shadowOffset(1.6);
+    gfx.drawSprite(scenery.pot.tex, scenery.pot.x + pso[0], scenery.pot.y + pso[1], scenery.pot.w, scenery.pot.h, scenery.pot.rot,
+      [SHADOW_TINT[0], SHADOW_TINT[1], SHADOW_TINT[2], CONFIG.shadows.propAlpha], false);
+    gfx.drawSprite(scenery.pot.tex, scenery.pot.x, scenery.pot.y, scenery.pot.w, scenery.pot.h, scenery.pot.rot, [0.92, 0.96, 0.94, 1], false);
+  }
+  // striders: four leg dimples each, no body shadow
+  for (const sd of Pond.striders) {
+    for (const [dx, dy] of [[-2.2, -2], [2.2, -2], [-2.2, 2], [2.2, 2]]) {
+      gfx.drawSprite(blob, sd.x + dx, sd.y + dy + 1.2, 2.4, 1.8, 0,
+        [SHADOW_TINT[0], SHADOW_TINT[1], SHADOW_TINT[2], CONFIG.shadows.floatAlpha * 0.9], false);
+    }
+  }
 
   // ---- the water surface pass, refracting everything above ----
   gfx.bindTarget(gfx.targets.scene);
@@ -1570,22 +2338,35 @@ function drawFrame() {
       [SHADOW_TINT[0], SHADOW_TINT[1], SHADOW_TINT[2], CONFIG.shadows.bankAlpha], false);
     gfx.drawSprite(s.tex, s.x, y, s.w, s.h, s.rot, [1, 1, 1, 1], false);
   }
+
+  // tobi-ishi: flat stones standing proud of the shallows. Drawn before the
+  // pads so a drifting leaf passes over one rather than under it.
+  const stoneSo = shadowOffset(2.0);
+  for (const ss of scenery.steppingStones) {
+    gfx.drawSprite(ss.tex, ss.x + stoneSo[0], ss.y + stoneSo[1], ss.w, ss.h, ss.rot,
+      [SHADOW_TINT[0], SHADOW_TINT[1], SHADOW_TINT[2], CONFIG.shadows.bankAlpha], false);
+    gfx.drawSprite(ss.tex, ss.x, ss.y, ss.w, ss.h, ss.rot, [1, 1, 1, 1], false);
+  }
+
   for (const pad of scenery.pads) {
     const bob = padBobAt(pad, time);
     const so = shadowOffset(3.2);
     // one pass, drawn together, so nothing can separate them
     gfx.drawSprite(pad.tex, pad.x + so[0], pad.y + so[1] + bob * 0.5, pad.size * 0.99, pad.size * 0.96, pad.rot,
       [SHADOW_TINT[0], SHADOW_TINT[1], SHADOW_TINT[2], CONFIG.shadows.padAlpha], false);
-    // hover and grab read as light, never as size: a pad is always exactly
-    // pad.size, it just catches more sun when your pointer is on it
+    // A pad answers the pointer with light: the pad's own pixels are added
+    // over the top of it, so it brightens in place. A tint bump alone moved
+    // the green channel by about one part in twenty, which is nothing on a
+    // four-pixel canvas. Only the pad a press would take lights up, so the
+    // glow is the grab area and not a guess.
     const hovered = Pond.state.hoverPad === pad || Pond.state.selPad === pad;
-    const near = Pond.state.nearPad === pad;
     const held = Pond.state.dragPad === pad;
-    // a pad you can take glows at half strength; one you are merely near shows
-    // a faint lift, so you can see the layout before you commit to a press
-    const glow = (hovered ? 0.5 : 0) + (near ? 0.16 : 0) + (held ? 0.5 : 0);
-    const s = pad.shade * (1 + glow * 0.22);
+    const lit = held ? 1 : hovered ? 0.85 : 0;
+    const s = pad.shade * (1 + lit * 0.12);
     gfx.drawSprite(pad.tex, pad.x, pad.y + bob, pad.size, pad.size, pad.rot, [s, s, s, 1], false);
+    if (lit > 0) {
+      gfx.drawGlow(pad.tex, pad.x, pad.y + bob, pad.size, pad.size, pad.rot, [1.02, 1.08, 0.88], lit * 0.5);
+    }
   }
   for (const f of scenery.padFlowers) {
     const bob = waterBobAt(f.pad.x, f.pad.y, time) * 0.6;
@@ -1596,6 +2377,16 @@ function drawFrame() {
     const size = 3.4 * we.size;
     gfx.drawSprite(we.tex, we.x, we.y + bob, size, size * 0.8, we.rot, [1, 1, 1, 1], false);
   }
+  // water hyacinth: sits a hair higher than a pad and drifts faster
+  if (scenery.hyacinths) {
+    for (const hy of scenery.hyacinths) {
+      const bob = waterBobAt(hy.x, hy.y, time) * 0.7;
+      gfx.drawSprite(hy.tex, hy.x, hy.y + bob, hy.size, hy.size * 0.82, hy.rot, [1, 1, 1, 1], false);
+    }
+  }
+  for (const sd of Pond.striders) {
+    gfx.drawSprite(sd.canvas, sd.x, sd.y, sd.canvas.width, sd.canvas.height, sd.rot, [1, 1, 1, 1], false);
+  }
   // moss mats sit on the surface, a hair proud of the water
   for (const mo of scenery.surfaceMoss) {
     const bob = waterBobAt(mo.x, mo.y, time) * 0.5;
@@ -1603,6 +2394,11 @@ function drawFrame() {
   }
   for (const bf of Pond.butterflies) {
     gfx.drawSprite(bf.canvas, bf.x, bf.y, bf.canvas.width, bf.canvas.height, bf.rot, [1, 1, 1, 1], false);
+  }
+  for (const df of Pond.dragonflies) {
+    // a hair of scale with height, so the ones riding high read as closer
+    const k = 1 + df.z * 0.08 + (df.hover || 0) * 0.02;
+    gfx.drawSprite(df.canvas, df.x, df.y, df.canvas.width * k, df.canvas.height * k, df.rot, [1, 1, 1, 1], false);
   }
   for (const pellet of world.pellets) {
     const bob = waterBobAt(pellet.x, pellet.y, time) * 0.5;

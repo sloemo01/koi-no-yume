@@ -26,6 +26,11 @@ function ringFade(p, profile) {
 }
 
 function spawnRipple(kind, x, y, opts) {
+  // a splash is a real shove, not just a drawn ring
+  if (typeof Pond !== "undefined" && Pond.flow && (kind === "splash" || kind === "grab")) {
+    const k = opts && opts.scale ? opts.scale : 1;
+    Pond.flow.impulse(x, y, 1.6 * k, 18 + 10 * k);
+  }
   if (WATER_FIELD.suppress) return null;
   const profile = waterProfile(kind);
   const rings = (opts && opts.rings) || profile.rings;

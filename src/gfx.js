@@ -263,11 +263,17 @@ Gfx.prototype.resize = function (w, h) {
   }
   const bw = Math.max(2, Math.floor(w / 2));
   const bh = Math.max(2, Math.floor(h / 2));
+  const gw = Math.max(2, Math.floor(w / 4));
+  const gh = Math.max(2, Math.floor(h / 4));
   this.targets = {
     under: make(w, h),
     scene: make(w, h),
     bloomA: make(bw, bh),
     bloomB: make(bw, bh),
+    // the wide half of the light: a quarter-res copy, blurred again, which
+    // gives the soft halo around bright things that a single blur cannot
+    glowA: make(gw, gh),
+    glowB: make(gw, gh),
   };
 };
 
@@ -401,6 +407,34 @@ Gfx.prototype.drawSprite = function (canvasEl, x, y, w, h, rot, tint, flipV) {
   gl.drawArrays(gl.TRIANGLES, 0, 6);
 };
 
+// Additive pass: the same silhouette added on top of itself. A hovered pad
+// brightens by its own colour instead of being scaled up, so a pad that says
+// "press me" is still exactly the size of the pad you are aiming at. The
+// blend mode only exists for the length of this draw, so every other sprite
+// keeps normal alpha blending.
+Gfx.prototype.drawGlow = function (canvasEl, x, y, w, h, rot, color, strength) {
+  const gl = this.gl;
+  const s = strength === undefined ? 0.4 : strength;
+  if (s <= 0) return;
+  const prog = this.programs.sprite;
+  gl.useProgram(prog.program);
+  const u = prog.u;
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, this.tex(canvasEl));
+  gl.uniform1i(u.uTex, 0);
+  gl.uniform2f(u.uRes, this.width, this.height);
+  gl.uniform2f(u.uPos, x, y);
+  gl.uniform2f(u.uSize, w, h);
+  gl.uniform1f(u.uRot, rot || 0);
+  const c = color || [1, 1, 0.9];
+  gl.uniform4f(u.uTint, c[0] * s, c[1] * s, c[2] * s, 1);
+  gl.uniform1f(u.uFlipV, 0);
+  gl.bindVertexArray(this.spriteVao);
+  gl.blendFunc(gl.ONE, gl.ONE);
+  gl.drawArrays(gl.TRIANGLES, 0, 6);
+  gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+};
+
 Gfx.prototype.makeSpineTex = function () {
   const gl = this.gl;
   const tex = gl.createTexture();
@@ -499,7 +533,10 @@ Gfx.prototype.drawSpinesDebug = function (world) {
 Gfx.prototype.present = function (world) {
   const gl = this.gl;
   const bw = this.targets.bloomA;
-  // bright pass
+  const gw = this.targets.glowA;
+  const bloom = CONFIG.bloom;
+
+  // bright pass, half res
   let prog = this.programs.bright;
   gl.useProgram(prog.program);
   gl.bindVertexArray(this.quadVao);
@@ -509,18 +546,34 @@ Gfx.prototype.present = function (world) {
   gl.bindTexture(gl.TEXTURE_2D, this.targets.scene.tex);
   gl.uniform1i(prog.u.uScene, 0);
   gl.uniform2f(prog.u.uTexel, 1 / this.width, 1 / this.height);
-  gl.uniform1f(prog.u.uThreshold, CONFIG.bloom.threshold);
-  gl.uniform1f(prog.u.uGain, CONFIG.bloom.gain);
+  gl.uniform1f(prog.u.uThreshold, bloom.enabled ? bloom.threshold : 2.0);
+  gl.uniform1f(prog.u.uGain, bloom.gain);
+  gl.uniform1f(prog.u.uKnee, bloom.knee);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
 
-  // blur
-  prog = this.programs.blur;
-  gl.useProgram(prog.program);
-  gl.bindFramebuffer(gl.FRAMEBUFFER, this.targets.bloomB.fbo);
-  gl.bindTexture(gl.TEXTURE_2D, bw.tex);
-  gl.uniform1i(prog.u.uTex, 0);
-  gl.uniform2f(prog.u.uTexel, 1 / bw.w, 1 / bw.h);
-  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  // tight bloom: blur across into B, then down back into A
+  const blur = this.programs.blur;
+  gl.useProgram(blur.program);
+  const pass = (src, dst, dir, spread) => {
+    gl.bindFramebuffer(gl.FRAMEBUFFER, dst.fbo);
+    gl.viewport(0, 0, dst.w, dst.h);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, src.tex);
+    gl.uniform1i(blur.u.uTex, 0);
+    gl.uniform2f(blur.u.uTexel, 1 / dst.w, 1 / dst.h);
+    gl.uniform2f(blur.u.uDir, dir[0], dir[1]);
+    gl.uniform1f(blur.u.uSpread, spread);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+  };
+  pass(bw, this.targets.bloomB, [1, 0], bloom.spread);
+  pass(this.targets.bloomB, bw, [0, 1], bloom.spread);
+
+  // wide glow: the tight result, quarter res, blurred again with a bigger
+  // radius. Two scales of light is what makes a bloom read as glow instead of
+  // a haze that lifts the whole frame.
+  pass(bw, gw, [1, 0], bloom.spread * 0.5);
+  pass(gw, this.targets.glowB, [0, 1], bloom.glowSpread);
+  pass(this.targets.glowB, gw, [1, 0], bloom.glowSpread);
 
   // composite to the canvas
   prog = this.programs.composite;
@@ -531,14 +584,19 @@ Gfx.prototype.present = function (world) {
   gl.bindTexture(gl.TEXTURE_2D, this.targets.scene.tex);
   gl.uniform1i(prog.u.uScene, 0);
   gl.activeTexture(gl.TEXTURE1);
-  gl.bindTexture(gl.TEXTURE_2D, this.targets.bloomB.tex);
+  gl.bindTexture(gl.TEXTURE_2D, bw.tex);
   gl.uniform1i(prog.u.uBloom, 1);
+  gl.activeTexture(gl.TEXTURE2);
+  gl.bindTexture(gl.TEXTURE_2D, gw.tex);
+  gl.uniform1i(prog.u.uGlow, 2);
   gl.uniform2f(prog.u.uRes, this.width, this.height);
-  gl.uniform1f(prog.u.uStrength, CONFIG.bloom.strength);
+  gl.uniform1f(prog.u.uTime, world.time);
+  gl.uniform1f(prog.u.uStrength, bloom.enabled ? bloom.strength : 0);
+  gl.uniform1f(prog.u.uGlowStrength, bloom.enabled ? bloom.glow : 0);
   gl.uniform1f(prog.u.uVignette, CONFIG.vignette);
-  const cl = world.clouds;
-  gl.uniform4f(prog.u.uCloudA, cl[0] ? cl[0].x : -1e5, cl[0] ? cl[0].y : -1e5, cl[0] ? cl[0].r : 1, cl[0] ? cl[0].shade : 0);
-  gl.uniform4f(prog.u.uCloudB, cl[1] ? cl[1].x : -1e5, cl[1] ? cl[1].y : -1e5, cl[1] ? cl[1].r : 1, cl[1] ? cl[1].shade : 0);
+  gl.uniform1f(prog.u.uCloudShade, CONFIG.clouds.shade);
+  gl.uniform1f(prog.u.uCloudScale, CONFIG.clouds.scale);
+  gl.uniform1f(prog.u.uCloudDrift, CONFIG.clouds.drift);
   gl.uniform3f(prog.u.uWarm, 1.0, 0.995, 0.972);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
 };
@@ -556,13 +614,18 @@ function WORLD_DEBUG_DOT() {
 
 // ------------------------------------------------------------------ shaders
 
+// One convention for every full-screen pass: vUV is the screen row, measured
+// from the top, so sampling a render target at vUV lands on the same screen
+// row it came from. There is no flip here. A flip here mirrors every image
+// that is sampled, while sprites drawn straight into the target keep their own
+// orientation, which put pads, flowers and reeds on screen mirrored against
+// the pads' own positions.
 const FLAT_VS = `#version 300 es
 precision highp float;
 layout(location = 0) in vec2 aPos;
 out vec2 vUV;
 void main() {
   vUV = aPos * 0.5 + 0.5;
-  vUV.y = 1.0 - vUV.y;
   gl_Position = vec4(aPos, 0.0, 1.0);
 }`;
 
@@ -692,10 +755,10 @@ in vec2 vUV;
 out vec4 outColor;
 
 void main() {
-  // vUV starts at the bottom of the frame buffer, but every world position in
-  // this project (rings, fish, pads, clouds) counts y down from the top. Flip
-  // here or the water features come out mirrored against everything drawn as
-  // a sprite, which is what put ripples on the wrong side of a click.
+  // vUV comes in bottom-up (GL): 0 at the bottom of the target, 1 at the top.
+  // World y counts down from the top, so un-flip to get a pond position.
+  // Sampling a target at plain vUV is a straight copy, which is what keeps
+  // sprites and the water in the same place.
   vec2 p = vec2(vUV.x, 1.0 - vUV.y) * uRes;
   float d = pondD(p);
   vec2 g = ringDisp(p) * 1.4 + swellGrad(p) * 6.0;
@@ -703,8 +766,30 @@ void main() {
   // --- the floor of the pond, all the way to the frame ---
   // d is 0 at the deepest point and rises toward the edges
   float mottle = vnoise(p * 0.05) * 0.62 + vnoise(p * 0.13 + 7.3) * 0.38;
+  // Basin-scale variation. Deliberately much larger than any other feature on
+  // the bed: this is the scale that reads as depth, and without it the floor
+  // is one even tone however much fine texture sits on top of it.
+  float basin = vnoise(p * 0.0075 + 12.0) * 0.66 + vnoise(p * 0.019 + 45.0) * 0.34;
+
   vec3 floorCol = mix(uSand, uMud, smoothstep(0.34, 0.78, mottle));
-  floorCol = mix(floorCol, uDeep, smoothstep(0.03, 0.5, 1.0 - d) * 0.94);
+  // Two stages of drop. The frame crops the middle of a much larger pond, so
+  // the ramp is compressed into the depths that are actually on screen: a
+  // shelf just past the shallows, then a steeper fall into the basin, so the
+  // middle sits a whole tone below the edge instead of meeting it halfway.
+  float dsh = 1.0 - d;
+  float shelf = smoothstep(0.04, 0.26, dsh);
+  float drop = smoothstep(0.2, 0.58, dsh);
+  floorCol = mix(floorCol, shadeRgb3(uDeep, 1.2), shelf * 0.85);
+  floorCol = mix(floorCol, uDeep, drop * 0.92);
+  // patchiness inside the basin, or the deep reads as a flat navy disc
+  floorCol = mix(floorCol, shadeRgb3(uDeep, 0.84), smoothstep(0.42, 0.9, basin) * drop * 0.75);
+  // pale silt fans where the shallows spill over the shelf
+  floorCol = mix(floorCol, shadeRgb3(uSand, 1.16), smoothstep(0.52, 0.86, basin) * (1.0 - shelf) * 0.4);
+  // and a broad lit side: the floor near the sun is a shade brighter than the
+  // floor on the far side, which is what gives the bed a sense of tilt
+  const vec2 sun2d = vec2(-0.54, -0.84);   // matches CONFIG.sun.dir
+  float litSide = clamp(dot((p / uRes - 0.5) * 2.0, sun2d) * 0.5 + 0.5, 0.0, 1.0);
+  floorCol *= 0.9 + litSide * 0.2;
   // patches of settled algae and weed, in two scales, to break the field up
   float algae = smoothstep(0.55, 0.85, vnoise(p * 0.026 + 31.7));
   floorCol = mix(floorCol, uAlgae, algae * 0.3 * (1.0 - abs(d - 0.42) * 1.3));
@@ -783,10 +868,8 @@ in vec2 vUV;
 out vec4 outColor;
 
 void main() {
-  // vUV starts at the bottom of the frame buffer, but every world position in
-  // this project (rings, fish, pads, clouds) counts y down from the top. Flip
-  // here or the water features come out mirrored against everything drawn as
-  // a sprite, which is what put ripples on the wrong side of a click.
+  // vUV is bottom-up: 0 at the bottom of the target. World y counts down from
+  // the top, so the pond position of this fragment is the un-flipped vUV.
   vec2 p = vec2(vUV.x, 1.0 - vUV.y) * uRes;
   float d = pondD(p);
   float mask = 1.0 - smoothstep(0.965, 1.03, d);
@@ -800,7 +883,10 @@ void main() {
   vec2 disp = (ringDisp(p) * uBend * 0.6 + swellGrad(p) * 6.0 + jitter) * mask;
   disp = clamp(disp, vec2(-uMaxBend), vec2(uMaxBend));
   disp = floor(disp + 0.5);                       // whole pixels only
-  vec3 col = texture(uUnder, vUV + disp / uRes).rgb;
+  // disp is in pond pixels with y counting down; v counts up, so the y part of
+  // the offset is negated. Without this the refraction pulls the image the
+  // wrong way vertically, which is what put a pad's ripple above the pad.
+  vec3 col = texture(uUnder, vUV + vec2(disp.x, -disp.y) / uRes).rgb;
 
   // d is 0 in the middle of the pond and 1 at the shoreline: deep in the
   // middle, shallow at the edges, and a lift where the floor is close
@@ -889,7 +975,7 @@ const BRIGHT_FS = `#version 300 es
 precision highp float;
 uniform sampler2D uScene;
 uniform vec2 uTexel;
-uniform float uThreshold, uGain;
+uniform float uThreshold, uGain, uKnee;
 in vec2 vUV;
 out vec4 outColor;
 void main() {
@@ -897,24 +983,31 @@ void main() {
     + texture(uScene, vUV + vec2(uTexel.x, -uTexel.y)).rgb
     + texture(uScene, vUV + vec2(-uTexel.x, uTexel.y)).rgb
     + texture(uScene, vUV + vec2(uTexel.x, uTexel.y)).rgb) * 0.25;
+  // soft knee: a hard cut makes every highlight pop on and off as it crosses
+  // the threshold, a knee fades them in and keeps the bloom from strobing
   float l = max(max(c.r, c.g), c.b);
-  outColor = vec4(c * max(l - uThreshold, 0.0) * uGain / max(l, 0.0001), 1.0);
+  float soft = clamp(l - uThreshold + uKnee, 0.0, 2.0 * uKnee);
+  soft = soft * soft / (4.0 * uKnee + 1e-4);
+  float take = max(soft, l - uThreshold) / max(l, 1e-4);
+  outColor = vec4(c * take * uGain, 1.0);
 }`;
 
+// Separable Gaussian, five taps each way, run twice: once across, once down.
+// uDir picks the axis and uSpread the radius, so the same shader does the tight
+// bloom and the wide glow without a second program.
 const BLUR_FS = `#version 300 es
 precision highp float;
 uniform sampler2D uTex;
 uniform vec2 uTexel;
+uniform vec2 uDir;
+uniform float uSpread;
 in vec2 vUV;
 out vec4 outColor;
 void main() {
-  vec2 o1 = uTexel * 1.5;
-  vec2 o2 = uTexel * 3.5;
-  vec3 c = texture(uTex, vUV).rgb * 0.25;
-  c += (texture(uTex, vUV + vec2(o1.x, 0.0)).rgb + texture(uTex, vUV - vec2(o1.x, 0.0)).rgb
-    + texture(uTex, vUV + vec2(0.0, o1.y)).rgb + texture(uTex, vUV - vec2(0.0, o1.y)).rgb) * 0.125;
-  c += (texture(uTex, vUV + vec2(o2.x, o2.y)).rgb + texture(uTex, vUV - vec2(o2.x, o2.y)).rgb
-    + texture(uTex, vUV + vec2(o2.x, -o2.y)).rgb + texture(uTex, vUV - vec2(o2.x, -o2.y)).rgb) * 0.0625;
+  vec2 o = uTexel * uDir * uSpread;
+  vec3 c = texture(uTex, vUV).rgb * 0.227027;
+  c += (texture(uTex, vUV + o * 1.3846).rgb + texture(uTex, vUV - o * 1.3846).rgb) * 0.316216;
+  c += (texture(uTex, vUV + o * 3.2308).rgb + texture(uTex, vUV - o * 3.2308).rgb) * 0.070270;
   outColor = vec4(c, 1.0);
 }`;
 
@@ -922,27 +1015,88 @@ const COMPOSITE_FS = `#version 300 es
 precision highp float;
 uniform sampler2D uScene;
 uniform sampler2D uBloom;
+uniform sampler2D uGlow;
 uniform vec2 uRes;
+uniform float uTime;
 uniform float uStrength, uVignette;
-uniform vec4 uCloudA, uCloudB;
+uniform float uGlowStrength;
+uniform float uCloudShade, uCloudScale, uCloudDrift;
 uniform vec3 uWarm;
 in vec2 vUV;
 out vec4 outColor;
 
-float cloudShade(vec4 cloud, vec2 p) {
-  float d = distance(p, cloud.xy);
-  return cloud.w * (1.0 - smoothstep(cloud.z * 0.3, cloud.z, d));
+// This pass does not include the shared GLSL block, so it carries its own
+// copy of the value noise the shade field is built from.
+float hash12(vec2 p) {
+  vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+  p3 += dot(p3, p3.yzx + 33.33);
+  return fract((p3.x + p3.y) * p3.z);
+}
+
+float vnoise(vec2 p) {
+  vec2 cell = floor(p);
+  vec2 local = fract(p);
+  local = local * local * (3.0 - 2.0 * local);
+  float a = hash12(cell);
+  float b = hash12(cell + vec2(1.0, 0.0));
+  float c = hash12(cell + vec2(0.0, 1.0));
+  float d = hash12(cell + vec2(1.0, 1.0));
+  return mix(mix(a, b, local.x), mix(c, d, local.x), local.y);
+}
+
+float cloudFbm(vec2 p) {
+  float s = 0.0;
+  float a = 0.5;
+  for (int i = 0; i < 4; i++) {
+    s += a * vnoise(p);
+    p = p * 2.03 + 17.0;
+    a *= 0.5;
+  }
+  return s / 0.9375;
+}
+
+// two independent slow wanders, one at half scale, so the field never slides
+// along one straight line
+vec2 cloudWander(vec2 p, float t) {
+  return vec2(sin(t * 0.05 + p.y * 0.8), cos(t * 0.04 + p.x * 0.6)) * 0.5
+       + vec2(sin(t * 0.023 + 1.7), cos(t * 0.036 + 0.4)) * 0.5;
+}
+
+// A drifting shadow field with no cloud drawn anywhere. Two fbm octaves at
+// different scales make the mass outline, a third makes the billows inside it,
+// and a smoothstep lifts the dense cores. That is what makes it read as the
+// shadow of a cloud instead of a stain or a round blob.
+float cloudShadow(vec2 p, float t) {
+  vec2 q = p + cloudWander(p, t) * 0.18 + cloudWander(p * 0.5, t * 0.7) * 0.15;
+  q += vec2(sin(q.y * 1.7 + t * 0.05), cos(q.x * 1.3 + t * 0.04)) * 0.05;
+  float clumps = cloudFbm(q * 1.35 + vec2(t * 0.008, -t * 0.006) + 4.7);
+  float clumps2 = cloudFbm(q * 0.85 + vec2(-t * 0.006, t * 0.009) + 19.3);
+  float broad = max(smoothstep(0.42, 0.75, clumps),
+                    smoothstep(0.48, 0.78, clumps2) * 0.85);
+  float billow = cloudFbm(q * 3.0 + vec2(-t * 0.01, t * 0.008));
+  float sh = broad * (0.60 + 0.40 * billow);
+  sh += smoothstep(0.50, 0.95, sh) * 0.26;
+  return min(sh, 0.80);
 }
 
 void main() {
-  vec3 col = texture(uScene, vUV).rgb + texture(uBloom, vUV).rgb * uStrength;
-  // vUV starts at the bottom of the frame buffer, but every world position in
-  // this project (rings, fish, pads, clouds) counts y down from the top. Flip
-  // here or the water features come out mirrored against everything drawn as
-  // a sprite, which is what put ripples on the wrong side of a click.
+  vec3 col = texture(uScene, vUV).rgb
+    + texture(uBloom, vUV).rgb * uStrength
+    + texture(uGlow, vUV).rgb * uGlowStrength;
+  // vUV is bottom-up; world y counts down, so un-flip for the shade field.
   vec2 p = vec2(vUV.x, 1.0 - vUV.y) * uRes;
-  float shade = cloudShade(uCloudA, p) + cloudShade(uCloudB, p);
-  col *= 1.0 - clamp(shade, 0.0, 0.5);
+  // The field is sampled on a two-pixel grid, so the boundary moves in chunky
+  // steps the size of the pond's own pixels instead of a one-pixel contour
+  // that reads as a soft edge once the canvas is scaled up.
+  vec2 cp = (floor(p * 0.5) + 0.5) * 2.0;
+  float shade = cloudShadow(cp * uCloudScale, uTime * uCloudDrift);
+  // Pixel art, not photography: two flat tones with hard edges, the way a
+  // shadow is painted into a tile. The outer tone carries the shape, the inner
+  // one marks the dense core of the mass.
+  shade = shade > 0.62 ? 1.0 : (shade > 0.26 ? 0.6 : 0.0);
+  // and it cools the water rather than just dimming it, the way shade on water
+  // goes blue-grey under a white sun
+  col *= 1.0 - shade * uCloudShade * vec3(1.08, 0.98, 0.86);
   col *= uWarm;
   vec2 q = vUV - 0.5;
   col *= 1.0 - uVignette * pow(clamp(length(q) * 1.5, 0.0, 1.0), 2.2);

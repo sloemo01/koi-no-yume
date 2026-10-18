@@ -11,8 +11,8 @@
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body { width: 100%; height: 100%; overflow: hidden; background: #17383f; }
   body {
-    font-family: "SF Mono", "Menlo", ui-monospace, monospace;
-    -webkit-font-smoothing: none;
+    font-family: Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
+    -webkit-font-smoothing: antialiased;
     -webkit-user-select: none; user-select: none;
     touch-action: none;
   }
@@ -24,33 +24,21 @@
     cursor: crosshair;
     touch-action: none;
   }
-  .hud {
-    position: fixed;
-    color: #e9e3d2;
-    text-shadow: 0 1px 0 rgba(8, 24, 28, 0.85), 0 -1px 0 rgba(8, 24, 28, 0.4);
-    font-size: 11px;
-    line-height: 1.9;
-    letter-spacing: 0.02em;
-    opacity: 0.92;
-    transition: opacity 0.5s ease;
-  }
+  .hud { position: fixed; transition: opacity 0.35s ease; }
   .hud.hidden { opacity: 0; pointer-events: none; }
   #hint {
-    left: 14px; bottom: 12px;
+    left: 20px; bottom: 18px;
     /* the instructions must never eat a press meant for a pad */
     pointer-events: none;
+    font-size: 12.5px; font-weight: 450; line-height: 1.65;
+    color: rgba(250, 250, 250, 0.62); letter-spacing: 0;
+    transition: opacity 0.8s ease;
   }
-  #hint b { color: #ffd9a0; font-weight: 600; }
+  #hint b { color: #fafafa; font-weight: 550; }
   #hint .row { white-space: nowrap; }
-  #controls {
-    right: 14px; bottom: 12px;
-    text-align: right;
-    display: flex; flex-direction: column; align-items: flex-end; gap: 6px;
-  }
   @media (max-width: 620px) {
     .hud { font-size: 10px; line-height: 1.7; }
     #hint .row.dim { display: none; }
-    #controls { gap: 4px; }
     button.px { padding: 2px 6px; }
   }
   button.px {
@@ -72,23 +60,139 @@
     z-index: 9;
   }
 
-#panel {
-  position: fixed; right: 14px; bottom: 14px; display: flex; flex-direction: column; gap: 7px;
-  font: 11px/1.4 ui-monospace, Menlo, monospace; color: #e8e2d4;
-  background: rgba(9, 21, 25, .74); border: 1px solid rgba(232, 226, 212, .14);
-  border-radius: 9px; padding: 10px 12px; backdrop-filter: blur(6px);
+/* ---- shadcn surface: near-black card, 1px hairline, 10px card radius ---- */
+:root {
+  --bg: #252525; --card: #343434; --fg: #fafafa; --muted: #b4b4b4;
+  --border: rgba(255, 255, 255, .10); --accent: #444444; --radius: 10px;
 }
-#panel .prow { display: flex; align-items: center; gap: 6px; }
-#panel .prow span { flex: 1; opacity: .6; text-transform: uppercase; letter-spacing: .08em; font-size: 9.5px; }
-#panel .prow b { min-width: 30px; text-align: center; font-weight: 600; font-variant-numeric: tabular-nums; }
-#panel .sbtn {
-  background: #1d1d1f; color: #e8e2d4; border: 1px solid rgba(255, 255, 255, .10);
-  border-radius: 6px; padding: 3px 8px; font: inherit; cursor: pointer;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .14), inset 0 -1px 0 rgba(0, 0, 0, .5), 0 1px 2px rgba(0, 0, 0, .35);
-  transition: box-shadow .12s ease, transform .06s ease;
+.pond-ui { position: fixed; inset: 0; pointer-events: none; font-family: Inter, system-ui, -apple-system, "Segoe UI", sans-serif; }
+.pond-ui > * { pointer-events: auto; }
+.brand { position: fixed; left: 20px; top: 16px; color: var(--fg); }
+.brand-name { font-size: 12.5px; font-weight: 660; letter-spacing: 1.75px; text-transform: lowercase; }
+.brand-sub { font-size: 13px; font-weight: 500; color: var(--muted); margin-top: 3px; }
+.top-actions {
+  position: fixed; right: 18px; top: 18px; display: flex; align-items: center; gap: 2.5px;
+  padding: 3.5px; background: rgba(24, 24, 27, .92); border: 1px solid var(--border);
+  border-radius: 13.6px;
+  box-shadow: 0 10px 34px rgba(0, 0, 0, .24), inset 0 1px 0 rgba(255, 255, 255, .04);
 }
-#panel .sbtn:hover { box-shadow: inset 0 1px 0 rgba(255, 255, 255, .16), inset 0 -1px 0 rgba(0, 0, 0, .5), 0 0 0 2px rgba(232, 226, 212, .22); }
-#panel .sbtn:active { transform: translateY(1px); }
+.btn {
+  display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 12px;
+  border: 1px solid transparent; border-radius: 18px; background: transparent;
+  color: var(--fg); font: inherit; font-size: 13.5px; font-weight: 500; cursor: pointer;
+  transition: background .12s ease;
+}
+.btn:hover { background: rgba(255, 255, 255, .06); }
+.btn:active { background: rgba(255, 255, 255, .1); }
+.btn.on { background: var(--accent); }
+.btn kbd {
+  font: inherit; font-size: 11px; color: var(--muted); background: rgba(255, 255, 255, .06);
+  border: 1px solid var(--border); border-radius: 5px; padding: 0 4px; line-height: 15px;
+}
+.sep { width: 1px; height: 18px; background: var(--border); margin: 0 2px; }
+.sheet {
+  position: fixed; right: 18px; top: 62px; width: 272px; padding: 6px;
+  background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, .45); color: var(--fg);
+}
+.sheet[hidden] { display: none; }
+.sheet h4 {
+  margin: 8px 8px 4px; font-size: 11px; font-weight: 600; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--muted);
+}
+.row { display: flex; align-items: center; gap: 6px; height: 32px; padding: 0 8px; border-radius: 7px; }
+.row:hover { background: rgba(255, 255, 255, .05); }
+.row .label { flex: 1; font-size: 13px; font-weight: 450; }
+.row b { min-width: 38px; text-align: right; font-size: 13px; font-weight: 500; color: var(--muted); font-variant-numeric: tabular-nums; }
+.step {
+  width: 22px; height: 22px; display: inline-flex; align-items: center; justify-content: center;
+  border: 1px solid var(--border); border-radius: 6px; background: rgba(255, 255, 255, .04);
+  color: var(--fg); font: inherit; font-size: 12px; cursor: pointer;
+}
+.step:hover { background: rgba(255, 255, 255, .1); }
+.sheet .divider { height: 1px; background: var(--border); margin: 5px 6px; }
+
+  /* ---- sliders ---- */
+  .slider {
+    -webkit-appearance: none; appearance: none;
+    flex: 1; height: 4px; min-width: 60px; margin: 0 4px;
+    border-radius: 1px; background: rgba(255, 255, 255, .16);
+    outline: none; cursor: pointer;
+  }
+  .slider::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 11px; height: 13px;
+    border-radius: 2px; background: #fafafa;
+    border: 1px solid rgba(0, 0, 0, .45);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, .45);
+  }
+  .slider::-moz-range-thumb {
+    width: 11px; height: 13px; border-radius: 2px;
+    background: #fafafa; border: 1px solid rgba(0, 0, 0, .45);
+  }
+  .slider:focus-visible { box-shadow: 0 0 0 2px rgba(250, 250, 250, .25); }
+  button, .btn, .step, .slider { -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
+
+  /* ---- phones and tablets: the bar spans the width, keycaps go (no keyboard),
+         tap targets grow, and both sheets dock to the bottom ---- */
+  @media (max-width: 900px), (pointer: coarse) {
+    .top-actions {
+      left: max(10px, env(safe-area-inset-left));
+      right: max(10px, env(safe-area-inset-right));
+      top: max(10px, env(safe-area-inset-top));
+      justify-content: flex-start;
+      overflow-x: auto;
+      scrollbar-width: none;
+      -webkit-overflow-scrolling: touch;
+    }
+    .top-actions::-webkit-scrollbar { display: none; }
+    .btn { height: 36px; padding: 0 13px; font-size: 14px; white-space: nowrap; }
+    .btn kbd { display: none; }
+    .brand { left: max(14px, env(safe-area-inset-left)); top: calc(max(10px, env(safe-area-inset-top)) + 50px); }
+    .brand-sub { font-size: 12px; }
+    .sheet, .sheet.wide {
+      left: max(10px, env(safe-area-inset-left));
+      right: max(10px, env(safe-area-inset-right));
+      top: auto;
+      bottom: max(10px, env(safe-area-inset-bottom));
+      width: auto;
+      max-height: 58vh;
+      overflow-y: auto;
+      padding: 8px;
+    }
+    .row { height: 40px; }
+    .row .label, .row b { font-size: 14px; }
+    .step { width: 30px; height: 30px; font-size: 14px; }
+    .slider { height: 6px; }
+    .slider::-webkit-slider-thumb { width: 20px; height: 22px; }
+    .slider::-moz-range-thumb { width: 20px; height: 22px; }
+    #hint {
+      left: max(14px, env(safe-area-inset-left));
+      right: max(14px, env(safe-area-inset-right));
+      bottom: calc(max(10px, env(safe-area-inset-bottom)) + 8px);
+      font-size: 12px; line-height: 1.5;
+    }
+  }
+  /* narrow phones: six buttons do not fit one row, so lay them out as a grid
+     instead of letting the bar scroll sideways with half of them off screen */
+  @media (max-width: 560px) {
+    .top-actions {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 4px;
+      padding: 5px;
+      overflow: visible;
+    }
+    .btn { height: 38px; padding: 0 8px; justify-content: center; font-size: 13px; }
+    /* the divider is a grid item too, and it was eating a cell */
+    .sep { display: none; }
+    .brand { display: none; }
+    .sheet, .sheet.wide { max-height: 64vh; }
+  }
+  @media (max-height: 520px) and (pointer: coarse) {
+    .brand { display: none; }
+    .btn { height: 30px; font-size: 13px; padding: 0 10px; }
+    .sheet, .sheet.wide { max-height: 74vh; }
+  }
 </style>
 </head>
 <body>
@@ -100,19 +204,54 @@
   <div class="row dim"><b>shift-click</b> drops food &nbsp;·&nbsp; <b>space</b> scatter &nbsp;·&nbsp; <b>[ ]</b> koi &nbsp;·&nbsp; <b>h</b> hide</div>
 </div>
 
-<div id="controls" class="hud">
-  <div>
-  </div>
-  <div>
-  </div>
-</div>
 
+<div class="pond-ui">
+  <div class="brand hud">
+    <div class="brand-name">pond</div>
+    <div class="brand-sub">pixel koi pond</div>
+  </div>
 
-<div id="panel" class="hud">
-  <div class="prow"><span>koi</span><button class="sbtn" data-key="[">&minus;</button><b id="p-koi">16</b><button class="sbtn" data-key="]">+</button></div>
-  <div class="prow"><span>greenery</span><button class="sbtn" data-greenery="-">&minus;</button><b id="p-green">1</b><button class="sbtn" data-greenery="+">+</button></div>
-  <div class="prow"><span>pads</span><button class="sbtn" id="p-grab">grab: on</button></div>
-  <div class="prow"><span>pond</span><button class="sbtn" data-key=" ">scatter</button><button class="sbtn" data-key="h">hide</button></div>
+  <div class="top-actions hud">
+    <button class="btn" id="p-settings">Settings</button>
+    <button class="btn" id="p-advanced">Advanced</button>
+    <div class="sep"></div>
+    <button class="btn" id="p-grab">grab: on</button>
+    <button class="btn" id="p-sound">Sound</button>
+    <button class="btn" data-key="h">Hide UI <kbd>H</kbd></button>
+    <button class="btn" data-key=" ">Scatter <kbd>Space</kbd></button>
+  </div>
+
+  <div class="sheet wide hud" id="advanced" hidden>
+    <h4>koi</h4>
+    <div class="row"><span class="label">Count</span><input id="s-count" class="slider" type="range" min="1" max="48" step="1" value="24" data-adv="count"><b id="a-count">24</b></div>
+    <div class="row"><span class="label">Small fish</span><button class="step abtn" data-adv="small" data-step="-1">&minus;</button><b id="a-small">8</b><button class="step abtn" data-adv="small" data-step="1">+</button></div>
+    <div class="divider"></div>
+    <h4>varieties</h4>
+    <div class="row"><span class="label">Kohaku</span><button class="step abtn" data-adv="v:kohaku" data-step="-1">&minus;</button><b id="a-kohaku">4</b><button class="step abtn" data-adv="v:kohaku" data-step="1">+</button></div>
+    <div class="row"><span class="label">Sanke</span><button class="step abtn" data-adv="v:sanke" data-step="-1">&minus;</button><b id="a-sanke">4</b><button class="step abtn" data-adv="v:sanke" data-step="1">+</button></div>
+    <div class="row"><span class="label">Showa</span><button class="step abtn" data-adv="v:showa" data-step="-1">&minus;</button><b id="a-showa">4</b><button class="step abtn" data-adv="v:showa" data-step="1">+</button></div>
+    <div class="row"><span class="label">Ogon</span><button class="step abtn" data-adv="v:ogon" data-step="-1">&minus;</button><b id="a-ogon">4</b><button class="step abtn" data-adv="v:ogon" data-step="1">+</button></div>
+    <div class="row"><span class="label">Tancho</span><button class="step abtn" data-adv="v:tancho" data-step="-1">&minus;</button><b id="a-tancho">4</b><button class="step abtn" data-adv="v:tancho" data-step="1">+</button></div>
+    <div class="row"><span class="label">Shiro</span><button class="step abtn" data-adv="v:shiro" data-step="-1">&minus;</button><b id="a-shiro">4</b><button class="step abtn" data-adv="v:shiro" data-step="1">+</button></div>
+    <div class="divider"></div>
+    <h4>planting</h4>
+    <div class="row"><span class="label">Greenery</span><button class="step abtn" data-adv="greenery" data-step="-0.25">&minus;</button><b id="a-green">1.00</b><button class="step abtn" data-adv="greenery" data-step="0.25">+</button></div>
+    <div class="row"><span class="label">Duckweed</span><button class="step abtn" data-adv="duckweed" data-step="-0.25">&minus;</button><b id="a-duck">1.00</b><button class="step abtn" data-adv="duckweed" data-step="0.25">+</button></div>
+    <div class="row"><span class="label">Flowers</span><button class="step abtn" data-adv="flowers" data-step="-0.1">&minus;</button><b id="a-flowers">50%</b><button class="step abtn" data-adv="flowers" data-step="0.1">+</button></div>
+  </div>
+
+  <div class="sheet hud" id="panel" hidden>
+    <h4>pond</h4>
+    <div class="row"><span class="label">Koi</span><button class="step sbtn" data-key="[">&minus;</button><b id="p-koi">34</b><button class="step sbtn" data-key="]">+</button></div>
+    <div class="row"><span class="label">Greenery</span><button class="step sbtn" data-greenery="-"">&minus;</button><b id="p-green">1</b><button class="step sbtn" data-greenery="+">+</button></div>
+    <div class="divider"></div>
+    <h4>light</h4>
+    <div class="row"><span class="label">Bloom</span><button class="step sbtn" data-bloom="-0.1">&minus;</button><b id="p-bloom">1.10</b><button class="step sbtn" data-bloom="0.1">+</button></div>
+    <div class="row"><span class="label">Glow</span><button class="step sbtn" data-glow="-0.1">&minus;</button><b id="p-glow">0.60</b><button class="step sbtn" data-glow="0.1">+</button></div>
+    <div class="row"><span class="label">Threshold</span><button class="step sbtn" data-thresh="-0.08">&minus;</button><b id="p-thresh">0.66</b><button class="step sbtn" data-thresh="0.08">+</button></div>
+    <div class="row"><span class="label">Radius</span><button class="step sbtn" data-spread="-0.3">&minus;</button><b id="p-spread">1.7</b><button class="step sbtn" data-spread="0.3">+</button></div>
+    <div class="row"><span class="label">Light</span><button class="step sbtn" id="p-light" style="width:auto;padding:0 8px">bloom: on</button></div>
+  </div>
 </div>
 
 <div id="err"></div>
@@ -141,6 +280,9 @@
 <script src="src/world.js"></script>
 <script src="src/fish.js"></script>
 <script src="src/butterflies.js"></script>
+<script src="src/dragonflies.js"></script>
+<script src="src/striders.js"></script>
+<script src="src/flow.js"></script>
 <script src="src/gfx.js"></script>
 <script src="src/main.js"></script>
 </body>

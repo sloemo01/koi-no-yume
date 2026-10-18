@@ -18,15 +18,23 @@ const CONFIG = {
   },
 
   koi: {
-    count: 16,
+    count: 32,        // total in the pond: big nishikigoi plus the small ones
     minCount: 3,
-    maxCount: 26,
+    maxCount: 32,
+    smallCount: 8,    // a few small orange fish, not a shoal of them
+    smallLength: 0.56,
+    sizeScale: 1.0,   // every koi's length, as a multiple
     length: [30, 46],
     // ten nishikigoi looks; each fish gets its own painted pattern
     palettes: [
       "kohaku", "sanke", "showa", "utsuri", "bekko",
-      "tancho", "ogon", "platinum", "asagi", "chagoi",
+      "tancho", "ogon", "platinum", "asagi", "chagoi", "shiro",
     ],
+    // the pond is stocked by variety instead of by weight: four of each, so the
+    // six kinds are always all present and always in the same numbers
+    varieties: {
+      kohaku: 4, sanke: 4, showa: 4, ogon: 4, tancho: 4, shiro: 4,
+    },
     cruiseSpeed: [9, 16], // backing px / second
     turnRate: [3.2, 5.2],
     depthRise: 0.9, // seconds to rise when called
@@ -35,7 +43,7 @@ const CONFIG = {
   minnows: {
     schools: 4,
     perSchool: [5, 8],
-    length: 10,
+    length: 12,
     // a bolt reaction shared by the whole school
     cruiseSpeed: 12,
     dartSpeed: 52,
@@ -58,7 +66,7 @@ const CONFIG = {
   },
 
   pads: {
-    // lily pads are scenery: nothing grabs them, nothing highlights them
+    // pads are grabbable: press a painted leaf pixel and it follows your hand
     grabbable: true,
     clusters: [3, 4],
     perCluster: [3, 4],
@@ -74,7 +82,48 @@ const CONFIG = {
   reeds: { clusters: 5 },
   tufts: { count: 26 },
   shoreFlowers: { clusters: 6 },
-  duckweed: { patches: 10, perPatch: [5, 11] },
+  // duckweed grows in rafts: patches of ten to twenty motes, tightly grouped
+  duckweed: { patches: 28, perPatch: [12, 22], spread: [20, 14], level: 1 },
+
+  // callResponse values mirrored from the nagomi pond: delay grows with
+  // distance, the chase is a short sprint, then they settle round the point
+  callResponse: {
+    minimumDelaySeconds: 0.04,
+    distanceAtMaximumDelay: 360,
+    maximumDistanceDelaySeconds: 1.05,
+    distanceExponent: 1.5,
+    randomJitterSeconds: 0.18,
+    temperamentDelaySeconds: 0.22,
+    targetLifetimeSeconds: 6.2,
+    chaseBoostSeconds: 2.6,
+    chaseSpeedMultiplier: 2.3,
+    initialExtraSpeedMultiplier: 0.34,
+  },
+
+  // water hyacinth: floating rosettes, roots below the surface
+  hyacinths: { count: 4 },
+
+  // water striders: they stand on the surface film
+  striders: { count: 6 },
+
+  // oxygen bubbles: threads off the weed beds, and the odd one from a fish
+  bubbles: { weedEvery: [2.2, 6.5], perThread: [3, 6], rise: [9, 16], fishChance: 0.35 },
+
+  // tobi-ishi: loose chains plus loners, sizes and angles all random. The
+  // spread is wider than the stones themselves, so the water between two of
+  // them is a channel a fish can take instead of a wall.
+  stepping: { runs: 4, runLength: [2, 4], loners: 7, spread: [44, 62], size: [0.85, 1.4] },
+
+  dragonflies: {
+    count: 5,
+    palettes: ["emerald", "blue", "red", "bronze"],
+    hoverSpeed: [5, 11],
+    dartSpeed: [58, 96],
+    wingRate: [24, 34],
+    hoverTime: [1.1, 3.4],
+    dartTime: [0.28, 0.6],
+    lowSkim: 0.35,   // how often a hover is spent low over the water
+  },
 
   // ripple profiles, seconds and backing px. A click is a small cluster of
   // rings that expands once and fades; nothing ever bounces back off the
@@ -111,7 +160,7 @@ const CONFIG = {
     maxBend: 9, // hard clamp, px
     microBend: 1.4, // sub-pixel swell bend
     specular: 0.16,
-    deepTint: [0.60, 0.80, 0.84], // multiplied into deep water
+    deepTint: [0.46, 0.60, 0.66], // multiplied into deep water
     shallowLift: 0.03,
     shallowColor: [0.58, 0.78, 0.86], // the shallows keep a water hue
     shallowMix: 0.28,
@@ -123,24 +172,26 @@ const CONFIG = {
   },
 
   clouds: {
-    // only their shade is visible, drifting over the water
-    count: 2,
-    speed: [2.4, 3.6], // px/s
-    shade: [0.16, 0.11],
-    radius: [170, 240],
+    // No cloud is drawn anywhere. Only its shadow reaches the water, as one
+    // drifting noise field cut into two flat tones with hard edges, so it
+    // reads as pixel art and not as a soft photographic stain.
+    shade: 0.42,     // how far the core of a mass dims the pond
+    scale: 0.0042,   // world px to field units: lower is bigger masses
+    drift: 1.0,      // how fast the field travels
   },
 
   bed: {
-    // the floor is blue: pale pebbles, blue-grey silt, navy in the deep,
-    // and only the weed stays green so the plants still read as plants
-    pebble: [182, 202, 228],
-    sand: [144, 172, 206],
-    mud: [114, 146, 188],
-    deep: [66, 98, 144],
-    algae: [78, 120, 136],
-    bank: [94, 128, 158],
-    bankDark: [64, 94, 122],
-    mudEdge: [130, 152, 180],
+    // the floor is blue: pale pebbles, blue-grey silt, navy in the deep, and
+    // only the weed stays green so the plants still read as plants. Lifted a
+    // step overall, so the water reads sunlit rather than dusk
+    pebble: [198, 216, 238],
+    sand: [160, 188, 218],
+    mud: [128, 160, 200],
+    deep: [74, 106, 154],
+    algae: [88, 132, 146],
+    bank: [110, 146, 176],
+    bankDark: [78, 110, 140],
+    mudEdge: [146, 168, 196],
   },
 
   caustics: { amp: 0.115 },
@@ -150,7 +201,18 @@ const CONFIG = {
     dir: [-0.5, -0.78],
     color: [1.0, 0.97, 0.86],
   },
-  bloom: { threshold: 0.9, gain: 1.3, strength: 0.42 },
+  bloom: {
+    // Two scales of light: a tight bloom on the highlights and a wide glow that
+    // carries it outward. Every value here is live, so the panel can move it.
+    enabled: true,
+    threshold: 0.66,  // where a pixel starts to glow
+    knee: 0.22,       // softness of that edge, keeps highlights from popping
+    gain: 1.15,       // how much light the bright pass collects
+    spread: 1.7,      // blur radius of the tight bloom
+    glowSpread: 2.6,  // extra radius of the wide glow
+    strength: 1.1,     // tight bloom
+    glow: 0.6,         // wide glow
+  },
   vignette: 0.24,
 
   shadows: {
@@ -166,5 +228,5 @@ const CONFIG = {
     butterflyAlpha: 0.12,
   },
 
-  sound: { startOn: false, volume: 0.5 },
+  sound: { startOn: false, volume: 0.9 },
 };
