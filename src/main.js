@@ -768,41 +768,14 @@ function panelLabel(id, text) {
 // ---- bar extras: github stars, full screen, frame cap ----------------------
 function installBarExtras() {
   const gh = document.getElementById("p-gh");
-  const count = document.getElementById("gh-count");
   if (gh) {
-    const KEY = "kny:stars";
-    const readCache = () => {
-      try { return JSON.parse(localStorage.getItem(KEY) || "null"); } catch (e) { return null; }
-    };
-    const paint = (n) => { if (count && typeof n === "number") count.textContent = String(n); };
-    // A star count that never moves is worse than no count. Revalidate whenever
-    // the tab comes back into view (you just went to GitHub to star it) and
-    // bypass the HTTP cache so GitHub's edge cannot hand back the old number.
-    const refreshStars = (force) => {
-      const cached = readCache();
-      const fresh = cached && Date.now() - cached.at < 20000;
-      if (!force && fresh) { paint(cached.n); return Promise.resolve(cached.n); }
-      return fetch("https://api.github.com/repos/sloemo01/koi-no-yume", { cache: "no-store" })
-        .then((r) => (r.ok ? r.json() : null))
-        .then((d) => {
-          if (!d || typeof d.stargazers_count !== "number") return null;
-          paint(d.stargazers_count);
-          return d.stargazers_count;
-          try { localStorage.setItem(KEY, JSON.stringify({ n: d.stargazers_count, at: Date.now() })); } catch (e) { void e; }
-        })
-        .catch(() => { void 0; });
-    };
-    Pond.refreshStars = () => refreshStars(true);
+    // No live star count. GitHub's unauthenticated API allows sixty requests an
+    // hour per address, and on a deployed site that quota is spent by other
+    // people, so the fetch came back 403 and wrote an error into the console for
+    // every visitor. The pill is a link with a word on it instead.
     gh.addEventListener("click", () => {
-      // going to star it: make sure the next focus is not served from cache
-      try { localStorage.removeItem(KEY); } catch (e) { void e; }
       window.open("https://github.com/sloemo01/koi-no-yume", "_blank", "noopener");
     });
-    document.addEventListener("visibilitychange", () => {
-      if (document.visibilityState === "visible") refreshStars(true);
-    });
-    window.addEventListener("focus", () => refreshStars(true));
-    refreshStars(false);
   }
 
   const full = document.getElementById("p-full");

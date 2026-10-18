@@ -261,9 +261,9 @@
   .gh:hover .gh-mark { opacity: 1; }
   .gh-stars { display: inline-flex; align-items: center; gap: 4px; }
   .gh-star { display: block; width: 16px; height: 16px; flex: 0 0 16px; color: #e8c463; }
-  .gh b {
-    font-weight: 600; font-size: 13px; line-height: 1;
-    color: var(--fg); font-variant-numeric: tabular-nums;
+  .gh-label {
+    font-weight: 550; font-size: 12.5px; line-height: 1;
+    color: var(--fg);
   }
   /* the fps menu: a small card of choices, each with one line of context */
   .menu {
@@ -358,7 +358,7 @@
       <svg class="gh-mark" viewBox="0 0 16 16" aria-label="GitHub"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
       <span class="gh-stars">
         <svg class="gh-star" viewBox="0 0 16 16" aria-label="stars"><path fill="currentColor" d="M8.00 2.03 L9.62 6.41 L14.28 6.59 L10.62 9.48 L11.88 13.97 L8.00 11.38 L4.12 13.97 L5.38 9.48 L1.72 6.59 L6.38 6.41 Z"/></svg>
-        <b id="gh-count">0</b>
+        <span class="gh-label">star</span>
       </span>
     </button>
     <div class="sep"></div>
@@ -474,11 +474,24 @@
     var el = document.getElementById("err");
     if (el) { el.style.display = "block"; el.textContent = window.__errs.slice(0, 4).join("\n"); }
   }
+  // Only this page's own scripts. Browser extensions inject code on every site
+  // and throw constantly (wallets are the loudest), and a cross origin script
+  // reports the useless string "Script error." with no file. Neither is this
+  // pond's problem, and both used to paint the red banner over the water.
+  function __mine(file) {
+    if (!file) return false;
+    return file.indexOf(location.origin + "/") === 0;
+  }
   window.addEventListener("error", function (e) {
-    __showErr((e.message || "error") + (e.filename ? " @ " + e.filename.split("/").pop() + ":" + e.lineno : ""));
+    if (!__mine(e.filename)) return;
+    __showErr((e.message || "error") + " @ " + e.filename.split("/").pop() + ":" + e.lineno);
   });
   window.addEventListener("unhandledrejection", function (e) {
-    __showErr("promise: " + (e.reason && e.reason.message ? e.reason.message : e.reason));
+    var reason = e.reason;
+    var stack = (reason && reason.stack) || "";
+    // a rejection with no stack pointing at this page came from somewhere else
+    if (stack.indexOf(location.origin) === -1) return;
+    __showErr("promise: " + (reason && reason.message ? reason.message : reason));
   });
 </script>
 <script src="vendor/jquery-3.7.1.min.js"></script>
