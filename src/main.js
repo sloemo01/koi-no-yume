@@ -1248,6 +1248,20 @@ function installInput(canvas) {
     st.pointer.x = hp.x;
     st.pointer.y = hp.y;
     st.hoverPad = st.dragPad || findPadAt(hp.x, hp.y, 1.0);
+    // Nothing under the pointer? Show the nearest pad when it is close. The
+    // pond's edge is full of green (reeds, moss, duckweed) that reads as a pad
+    // at a glance, so the pads themselves have to say where they are.
+    if (st.hoverPad) {
+      st.nearPad = null;
+    } else {
+      let best = null;
+      let bestD = 1e9;
+      for (const pad of Pond.scenery.pads) {
+        const d = Math.hypot(pad.x - hp.x, pad.y - hp.y);
+        if (d < bestD) { best = pad; bestD = d; }
+      }
+      st.nearPad = best && bestD < best.size * 1.9 ? best : null;
+    }
     // if the button is down but this page never saw a press, something above
     // the page ate it. Sweep onto a pad with the button held and you take it.
     if (!st.dragPad && !st.pointer.down && ev.buttons === 1) {
@@ -1565,8 +1579,11 @@ function drawFrame() {
     // hover and grab read as light, never as size: a pad is always exactly
     // pad.size, it just catches more sun when your pointer is on it
     const hovered = Pond.state.hoverPad === pad || Pond.state.selPad === pad;
+    const near = Pond.state.nearPad === pad;
     const held = Pond.state.dragPad === pad;
-    const glow = (hovered ? 0.5 : 0) + (held ? 0.5 : 0);
+    // a pad you can take glows at half strength; one you are merely near shows
+    // a faint lift, so you can see the layout before you commit to a press
+    const glow = (hovered ? 0.5 : 0) + (near ? 0.16 : 0) + (held ? 0.5 : 0);
     const s = pad.shade * (1 + glow * 0.22);
     gfx.drawSprite(pad.tex, pad.x, pad.y + bob, pad.size, pad.size, pad.rot, [s, s, s, 1], false);
   }
