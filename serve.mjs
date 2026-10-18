@@ -7,7 +7,7 @@ import { extname, join, normalize } from "node:path";
 const root = new URL(".", import.meta.url).pathname;
 const port = Number(process.env.PORT || 4173);
 const types = {
-  ".html": "text/html", ".js": "text/javascript", ".css": "text/css",
+  ".html": "text/html", ".js": "text/javascript", ".mjs": "text/javascript", ".css": "text/css",
   ".png": "image/png", ".svg": "image/svg+xml", ".json": "application/json",
   ".md": "text/markdown", ".ico": "image/x-icon",
 };

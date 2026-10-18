@@ -12,5 +12,8 @@
   "repository": {
     "type": "git",
     "url": "https://github.com/sloemo01/koi-no-yume.git"
+  },
+  "dependencies": {
+    "@vercel/analytics": "^2.0.1"
   }
 }
