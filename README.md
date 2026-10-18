@@ -123,7 +123,7 @@ Then open <http://localhost:4173>.
 
 Tuning lives in `src/config.js` and `src/moods.js`: koi counts and varieties, ripple profiles, water colours and refraction strength, caustics, cloud shade, flow, scenery counts. Edit, reload.
 
-## Credits
+## Inspiration
 
 Inspired by [nagomi](https://github.com/msk1039/nagomi), Mayank Kadam's procedural koi pond, and by the generative koi patterns on [arcade.pirillo.com](https://arcade.pirillo.com/koi-pond.html). Both were read for technique; no code or assets were taken. Independent implementation throughout.
 
