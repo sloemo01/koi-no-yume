@@ -314,7 +314,7 @@ function buildScenery(rand, res, pond) {
     // is about 130 px wide, and a 120 px boat was almost the full width of the
     // pond and had nowhere legal to sit. It keeps its desktop length and shrinks
     // with the frame on small screens.
-    const size = Math.round(clamp(res.x * 0.58, 76, 120));
+    const size = Math.round(clamp(res.x * 0.68, 88, 120));
     const halfW = size * 0.62;
     const halfH = size * 0.40;
     // a clear stretch of open water, away from the pads and stones
@@ -324,7 +324,7 @@ function buildScenery(rand, res, pond) {
       // on a phone the top bar covers about a quarter of the frame, so a hull
       // that spawns up there is hidden behind the controls until you hide them
       const topInset = Pond.state && Pond.state.touch ? res.y * 0.30 : halfH;
-      if (p.x < halfW || p.x > res.x - halfW || p.y < topInset || p.y > res.y - halfH) continue;
+      if (p.x < halfW + 6 || p.x > res.x - halfW - 6 || p.y < topInset || p.y > res.y - halfH - 6) continue;
       // Clearance has to shrink with the pond. On a phone the world is about 130
       // px wide and the pads sit everywhere, so a desktop sized gap rejected
       // every candidate and the hull fell back to an unchecked point, half of it
@@ -345,8 +345,8 @@ function buildScenery(rand, res, pond) {
       const p = pond.randomPoint(rand, 0.6, 0.1);
       const topInset = Pond.state && Pond.state.touch ? res.y * 0.30 : halfH;
       spot = {
-        x: clamp(p.x, halfW, res.x - halfW),
-        y: clamp(p.y, topInset, res.y - halfH),
+        x: clamp(p.x, halfW + 6, res.x - halfW - 6),
+        y: clamp(p.y, topInset, res.y - halfH - 6),
       };
     }
     return {
