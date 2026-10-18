@@ -20,6 +20,20 @@ The water fills the whole frame. There is no bank in view, just pond, with the f
 
 Click the surface and rings spread out, and every koi turns and rises to circle the spot. Drag a lily pad and it pushes real waves, then rides the swell back home. Throw it and it skims across the water and slides past whatever it meets. The rowboat works the same way, and it goes around the stepping stones rather than through them.
 
+### Get it
+
+Play it at **[koi-no-yume.vercel.app](https://koi-no-yume.vercel.app)**, or run it yourself. There is no build step and nothing to install, jQuery is vendored in the repo.
+
+```bash
+git clone https://github.com/sloemo01/koi-no-yume.git
+cd koi-no-yume
+python3 -m http.server 4173
+```
+
+Then open <http://localhost:4173>. Any static server works just as well, and opening `index.html` straight off the disk works too.
+
+Prefer a download? On the repo page choose **Code**, then **Download ZIP**, unzip it anywhere, and open `index.html`.
+
 ## Moods
 
 Six moods, each one a different sky, a different quality of light on the water, and its own glints.
@@ -31,7 +45,7 @@ Six moods, each one a different sky, a different quality of light on the water, 
 | Mist | haze gathered at the top, the near water stays sharp |
 | Sunset | orange over violet, low warm light, long gold glints |
 | Moonlight | moon white over deep blue, cool glints, a heavier bloom |
-| Rain | deep cloud shade, falling drops with impact rings, wet glints |
+| Rain | moonlight's palette with weather on it: drops, impact rings, heavier cloud shade |
 
 ## Controls
 
@@ -39,7 +53,7 @@ Six moods, each one a different sky, a different quality of light on the water, 
 | --- | --- |
 | Click or tap the water | a ripple, and the koi come up and circle it |
 | Drag a lily pad | pushes waves; let go fast and it skims |
-| Drag the boat | same, and it slides around stepping stones |
+| Drag the boat | it follows the hand and glides when you let go |
 | Shift click | drops food pellets; the koi break off to eat |
 | `space` | scatter the shoal |
 | `[` `]` | fewer or more koi |
@@ -50,13 +64,26 @@ Six moods, each one a different sky, a different quality of light on the water, 
 | `r` | a brand new pond |
 | `s` | sound on or off |
 
-On a phone or tablet the bar lays itself out as a grid, the keyboard hints drop away, and both panels dock to the bottom of the screen.
+On a phone or tablet the bar lays itself out as a grid, the keyboard hints drop away, and both panels dock to the bottom of the screen. Hiding the interface leaves a three line tab at the top right, which is the way back.
 
 ## What lives in the pond
 
 Six koi varieties, four of each by default: kohaku and sanke in bold red wraps with sumi spots, showa on black with red and white, ogon in solid metal gold, tancho with a single clean crown, and shiro, white with crisp ink patches. Every pattern is painted when the fish spawns, so no two are identical.
 
 Around them: schools of tiny minnows that bolt when a koi passes overhead, butterflies that wander and land on flowering lilies, dragonflies that hover and dart, water striders standing on the surface film, oxygen bubbles off the weed beds, lily pads and lotus flowers you can drag, water hyacinth with roots hanging into the water, duckweed drifting in rafts, stepping stones with fish weaving between them, a clay pot on the silty bottom, a wooden rowboat, and cloud shade moving over all of it.
+
+## The rowboat
+
+<img src="docs/boat.png" alt="A wooden rowboat seen from above, painted in pixel art" width="440">
+
+The hull is drawn from a 48 by 24 design, painted at three world pixels per texel and finished with a continuous outline, a capping rail, floorboards with seams, ribs, two thwarts, oars pulled in diagonally, rowlocks, a rope coil and a folded cloth at the stern. It is 120 pixels long on a desktop, 108 on a tablet and 88 on a phone, sized against the frame so it never becomes the whole pond on a narrow screen.
+
+It behaves like everything else in the water. Pick it up and it follows the hand with a slight lean. Throw it and it carries the speed of the throw, slowing on its own and settling where it stops. Push it at a stepping stone and it slides around the stone instead of stopping dead, the same way a lily pad slips past another pad. Left alone it drifts on the current, rocks on its own waterline, and keeps to its stretch of open water.
+
+Both of those last two are physical, not decorative:
+
+- **The hit area is the paint.** Pointing at the hull tests its painted texels, so a press on the transparent corner of its frame counts as water, not boat.
+- **The stone collision is the paint too.** The hull samples 154 points from its own texels, rotated with its heading, and tests each one against each stone's alpha map. An empty pixel inside a stone's bounding box is free water, because the stone is a shape, not a rectangle.
 
 ## Sound
 
@@ -70,27 +97,23 @@ The bar has two panels. `Settings` covers koi count, greenery, bloom, glow, thre
 
 The two panels always agree: the number in Settings is the sum of the varieties in Advanced, so raising it adds a fish to whichever variety is scarcest, and lowering a variety moves that number with it. The pond cannot be emptied below one koi.
 
-## How it works
+## How it is engineered
 
-**Pixels.** The scene renders into a small buffer, your window divided by 3 or 4 pixels, and the canvas is stretched back up with `image-rendering: pixelated`. Sprites are painted once on offscreen canvases, outlined, then alpha-hardened to 0 or 255 so nothing turns soft when the buffer is magnified. NEAREST sampling everywhere.
+**One small buffer, stretched.** The scene renders into a target the size of the window divided by 3 or 4 pixels, and the canvas is scaled back up with `image-rendering: pixelated`. At 4 pixels a 1800 pixel wide window is a 450 by 227 render target, a sixteenth of the fragments, and the reason a full pond costs about 2ms a frame. Sprites are painted once onto offscreen canvases, outlined, then alpha hardened to 0 or 255, so nothing turns soft when the buffer is magnified. NEAREST sampling everywhere.
 
-**Fish.** Each koi steers from a few small urges: its own slow wander, spacing from its neighbours, a loose pull toward company, the shoreline push, the last click, and food. Heading chases the blended result through angular velocity, so turns ease in and out, and the turn rate is capped by the fish's own length. A hard turn also clamps the angle between spine segments, so the body cannot fold back through its own tail. The body is a relaxed chain of 14 spine nodes kept at their distances from the head, with a travelling wave added toward the tail in the vertex shader. The sprite is bent by that chain through a silhouette table measured from the painted art, so fins and tail fans survive any bend. Depth is a real variable: a fish that sinks is drawn smaller, tinted toward the deep colour, and its shadow spreads and softens.
+**The frame pipeline.** The bed is drawn first, shaded by depth with caustics where the water is shallow, then the floating pass, then the surface. The surface is one refraction pass: the analytic slope of the swell displaces the whole composed image by whole pixels, so fish and pads bend with the waves instead of sitting on top of them. A bloom pass pulls out only the brightest pixels, so glints and flowers glow while the fish stay crisp. The mood is applied last as a grade: two stop sky veil, glint colour, exposure, contrast, vignette.
 
-**Water.** A calm analytic swell plus a handful of rings. Every ring is a jQuery job: a plain object animated from 0 to 1 by jQuery's own ticker, and the step callback turns that timeline into a radius and an amplitude. Because the ring lives on a timeline instead of a grid, it expands once and fades. The surface shader holds 32 rings at a time and sorts them by purpose before rank, so a click always reaches the screen on its first frame even when a hundred wake rings are alive. The finished frame is drawn through one refraction pass: the surface slope, built from the same analytic field, displaces the whole image by whole pixels, so everything under the surface bends with the waves.
+**Water on a timeline, not a grid.** Each ring is a jQuery job, a plain object animated from 0 to 1 by jQuery's own ticker, and its step callback turns that timeline into a radius and an amplitude. A ring therefore expands once and fades, and never needs a simulation step. The shader holds 32 rings and sorts them by purpose before strength, which is why a click reaches the screen on its first frame even when a hundred wake rings are alive.
 
-**Flow.** A small incompressible field, stable-fluids style, on a 75 by 37 grid: advect the velocity through itself, project it divergence free with fourteen Jacobi passes, then confine vorticity so eddies behind a stone do not smear out. Duckweed, hyacinth, bubbles and pellets sample it, fish tails push it, and every splash shoves it. Drag keeps it from accelerating forever, which is the difference between a pond and a river.
+**A real flow field underneath.** A small incompressible field, stable-fluids style, on a 75 by 37 grid: advect the velocity through itself, project it divergence free with fourteen Jacobi passes, then confine vorticity so the eddies behind a stone do not smear out. Stepping stones and the clay pot are solid cells. Duckweed, hyacinth, bubbles and pellets sample the field, fish tails push it, and every splash shoves it. Drag keeps it from accelerating forever, which is the difference between a pond and a river.
 
-**Light.** The floor is shaded by depth, with caustics where the water is shallow, slow diagonal shafts of sunlight, pebbles and algae. A bloom pass catches only the brightest pixels, so glints and flowers glow while the fish stay crisp. Mood sets the two-stop sky, the veil over the frame, glint strength and colour, exposure, contrast and vignette; cloud shade drifts over the top at the end.
+**Fish built on a spine.** Each koi steers from a few small urges: its slow wander, spacing from neighbours, a loose pull toward company, the shoreline push, the last click, and food. Heading chases the blend through angular velocity, so turns ease in and out, and the turn rate is capped by the fish's own length. A hard turn also clamps the angle between spine segments, which is what stops a U-turn folding the body through its own tail. The body is a chain of 14 nodes kept at their distances, with a travelling wave added toward the tail in the vertex shader. The sprite is bent by that chain through a silhouette table measured from the painted art, so fins and tail fans survive any bend. Depth is a real variable: a fish that sinks is drawn smaller, tinted toward the deep colour, and its shadow spreads and softens.
 
-## Run
+**Pads and boat ride the water.** Every floating thing samples the same analytic swell the shader uses, so a pad's height, tilt and small drift come from the water rather than from a timer. Hit testing stays exact because the motion is applied to the pad's real position, not only to how it is drawn.
 
-Open `index.html`. That is the whole install: no build step, no dependencies to fetch, jQuery is vendored in `vendor/`. It works straight off the file system, and any static server will do just as well:
+**The pixel boundary is the collision boundary.** Lily pads, the boat and the stepping stones all resolve against their painted alpha rather than a bounding box. That rule is what removes the invisible grab circle and the invisible wall beside a pointed stone, and it is why a thrown hull can nose into the notch between two stones and stop there.
 
-```
-python3 -m http.server 4173
-```
-
-Then open <http://localhost:4173>.
+**Time is fixed, presentation is not.** The simulation runs on a fixed 60Hz step. The frame rate control caps how often the frame is drawn, not how fast the world moves, so 30 and 20 are locked presentation rates and the pond keeps the same speed at every setting.
 
 ## URL parameters
 
