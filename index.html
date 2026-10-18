@@ -478,11 +478,16 @@
   // and throw constantly (wallets are the loudest), and a cross origin script
   // reports the useless string "Script error." with no file. Neither is this
   // pond's problem, and both used to paint the red banner over the water.
+  // Only this page's own scripts, and only files of ours. Checking the origin is
+  // not enough: an extension injects its code into the document and its errors
+  // arrive with the page's own URL, so a wallet's failure wore our address. The
+  // pond's code is all under src/, which is the line to draw.
   function __mine(file) {
     if (!file) return false;
-    return file.indexOf(location.origin + "/") === 0;
+    return file.indexOf(location.origin + "/src/") === 0;
   }
   window.addEventListener("error", function (e) {
+    if (e.message === "Script error.") return;
     if (!__mine(e.filename)) return;
     __showErr((e.message || "error") + " @ " + e.filename.split("/").pop() + ":" + e.lineno);
   });
