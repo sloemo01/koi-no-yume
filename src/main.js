@@ -771,22 +771,22 @@ function installBarExtras() {
   if (gh) {
     gh.addEventListener("click", () => {
       // going to star it: drop the cached number so the next load asks again
-      try { localStorage.removeItem("kny:stars:6"); } catch (e) { void e; }
+      try { localStorage.removeItem("kny:stars:7"); } catch (e) { void e; }
       window.open("https://github.com/sloemo01/koi-no-yume", "_blank", "noopener");
     });
-    // One request a day, from the source of truth. api.github.com allows sixty
-    // unauthorised calls an hour per address, which is plenty for a person and
-    // nothing for a public page that asks on every load, so the answer is kept in
-    // localStorage for a day and the pill clears it when clicked. Star the repo,
-    // come back, and the next load asks once and shows the new number.
+    // The count comes from GitHub itself, at most once every two minutes per
+    // tab, and again when the tab comes back into view. It has to be that often:
+    // a day long cache kept showing a star after it had been taken back, which is
+    // worse than a slightly stale number. Sixty calls an hour is the limit per
+    // address, and two minutes between checks is thirty, so a person tabbing in
+    // and out cannot spend it.
     //
-    // ungh and the two badge services sit behind it for the day GitHub refuses
-    // that address. They answer 200 whatever happens, so the fallback path never
-    // writes an error into the console.
+    // ungh and the two badge services answer when GitHub refuses, and they always
+    // answer 200, so the fallback path never writes an error into the console.
     const label = gh.querySelector(".gh-label");
     if (label) {
-      const KEY = "kny:stars:6";
-      const FRESH = 24 * 60 * 60 * 1000;
+      const KEY = "kny:stars:7";
+      const EVERY = 15 * 1000;
       const read = () => {
         try { return JSON.parse(localStorage.getItem(KEY) || "null"); } catch (e) { return null; }
       };
@@ -823,18 +823,36 @@ function installBarExtras() {
             return m ? toCount(m[1].replace(/\s+/g, "")) : null;
           })
           .catch(() => null);
+      let lastAt = 0;
       const cached = read();
-      if (cached && typeof cached.n === "number" && Date.now() - cached.at < FRESH) {
+      if (cached && typeof cached.n === "number") {
         label.textContent = String(cached.n);
-      } else {
+        lastAt = cached.at || 0;
+      }
+      let inFlight = false;
+      let checks = 0;
+      const check = () => {
+        // a tab that is switched back to constantly must not become a client of
+        // its own: twelve reads per page load is plenty, the rest come from cache
+        if (inFlight || checks >= 12) return;
+        checks++;
+        inFlight = true;
+        lastAt = Date.now();
         (async () => {
           let n = await fromGitHub();
           if (n === null) n = await fromUngh();
           if (n === null) n = await fromShields();
           if (n === null) n = await fromBadgen();
           if (typeof n === "number") paint(n);
+          inFlight = false;
         })();
-      }
+      };
+      const due = () => Date.now() - lastAt > EVERY;
+      if (due()) check();
+      document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === "visible" && due()) check();
+      });
+      window.addEventListener("focus", () => { if (due()) check(); });
     }
   }
 
