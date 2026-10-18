@@ -1,0 +1,44 @@
+name: stars
+
+# Keeps stars.json current without spending anything at runtime: no Vercel
+# functions, and no request to api.github.com from a visitor's browser. The
+# workflow is authenticated with the repo's own token, so it gets 5000 requests
+# an hour instead of the 60 an anonymous caller gets, and it only commits when
+# the number actually changed, which keeps Vercel from rebuilding every day.
+
+on:
+  schedule:
+    - cron: "17 4 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  stars:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read the count and write it if it moved
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          count=$(curl -sS -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            https://api.github.com/repos/${{ github.repository }} \
+            | python3 -c 'import json,sys; print(json.load(sys.stdin).get("stargazers_count", ""))')
+          if [ -z "$count" ]; then
+            echo "no count from the API, leaving the file alone"
+            exit 0
+          fi
+          printf '{"count": %s}\n' "$count" > stars.json
+          if git diff --quiet -- stars.json; then
+            echo "still $count"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add stars.json
+          git commit -m "Stars: $count"
+          git push

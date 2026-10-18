@@ -769,13 +769,23 @@ function panelLabel(id, text) {
 function installBarExtras() {
   const gh = document.getElementById("p-gh");
   if (gh) {
-    // No live star count. GitHub's unauthenticated API allows sixty requests an
-    // hour per address, and on a deployed site that quota is spent by other
-    // people, so the fetch came back 403 and wrote an error into the console for
-    // every visitor. The pill is a link with a word on it instead.
     gh.addEventListener("click", () => {
       window.open("https://github.com/sloemo01/koi-no-yume", "_blank", "noopener");
     });
+    // The count is a static file, refreshed by a scheduled GitHub Action. The
+    // page never calls api.github.com: that quota is per visitor address, so a
+    // public site spends it on strangers and gets a 403 in the console. This is
+    // one small same origin file off the CDN, so nothing here costs a serverless
+    // invocation. If it fails, the word "star" stays where the number would be.
+    const label = gh.querySelector(".gh-label");
+    if (label) {
+      fetch("stars.json", { cache: "no-store" })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => {
+          if (d && typeof d.count === "number" && d.count > 0) label.textContent = String(d.count);
+        })
+        .catch(() => { void 0; });
+    }
   }
 
   const full = document.getElementById("p-full");
