@@ -771,19 +771,22 @@ function installBarExtras() {
   if (gh) {
     gh.addEventListener("click", () => {
       // going to star it: drop the cached number so the next load asks again
-      try { localStorage.removeItem("kny:stars:4"); } catch (e) { void e; }
+      try { localStorage.removeItem("kny:stars:6"); } catch (e) { void e; }
       window.open("https://github.com/sloemo01/koi-no-yume", "_blank", "noopener");
     });
-    // The count comes from a badge service, never from api.github.com: that
-    // limit is sixty an hour per visitor address, so a public page spends it on
-    // strangers and gets a 403 in the console. Two free services are tried,
-    // shields first and badgen second, both of which keep their own GitHub
-    // credentials and their own cache. Nothing of ours runs for this: no
-    // serverless function, no scheduled job.
+    // One request a day, from the source of truth. api.github.com allows sixty
+    // unauthorised calls an hour per address, which is plenty for a person and
+    // nothing for a public page that asks on every load, so the answer is kept in
+    // localStorage for a day and the pill clears it when clicked. Star the repo,
+    // come back, and the next load asks once and shows the new number.
+    //
+    // ungh and the two badge services sit behind it for the day GitHub refuses
+    // that address. They answer 200 whatever happens, so the fallback path never
+    // writes an error into the console.
     const label = gh.querySelector(".gh-label");
     if (label) {
-      const KEY = "kny:stars:4";
-      const FRESH = 60 * 60 * 1000;
+      const KEY = "kny:stars:6";
+      const FRESH = 24 * 60 * 60 * 1000;
       const read = () => {
         try { return JSON.parse(localStorage.getItem(KEY) || "null"); } catch (e) { return null; }
       };
@@ -799,26 +802,38 @@ function installBarExtras() {
         try { localStorage.setItem(KEY, JSON.stringify({ n: n, at: Date.now() })); } catch (e) { void e; }
         return true;
       };
+      const get = (url) => fetch(url).then((r) => (r.ok ? r.json() : null)).catch(() => null);
+      const fromGitHub = () =>
+        get("https://api.github.com/repos/sloemo01/koi-no-yume").then((d) =>
+          d && typeof d.stargazers_count === "number" ? d.stargazers_count : null
+        );
+      const fromUngh = () =>
+        get("https://ungh.cc/repos/sloemo01/koi-no-yume").then((d) =>
+          d && d.repo && typeof d.repo.stars === "number" ? d.repo.stars : null
+        );
+      const fromShields = () =>
+        get("https://img.shields.io/github/stars/sloemo01/koi-no-yume.json").then((d) =>
+          d ? toCount(d.value) : null
+        );
+      const fromBadgen = () =>
+        fetch("https://badgen.net/github/stars/sloemo01/koi-no-yume")
+          .then((r) => (r.ok ? r.text() : ""))
+          .then((svg) => {
+            const m = svg.match(/stars:\s*([0-9][0-9.,]*\s*[kKmM]?)/);
+            return m ? toCount(m[1].replace(/\s+/g, "")) : null;
+          })
+          .catch(() => null);
       const cached = read();
       if (cached && typeof cached.n === "number" && Date.now() - cached.at < FRESH) {
         label.textContent = String(cached.n);
       } else {
-        fetch("https://img.shields.io/github/stars/sloemo01/koi-no-yume.json")
-          .then((r) => (r.ok ? r.json() : null))
-          .then((d) => {
-            const n = d ? toCount(d.value) : null;
-            if (n !== null) { paint(n); return null; }
-            // shields answers 200 even when its own GitHub tokens are dry, so the
-            // value can be a sentence. badgen reads the same count a different way
-            // and puts it in the badge title.
-            return fetch("https://badgen.net/github/stars/sloemo01/koi-no-yume")
-              .then((r) => (r.ok ? r.text() : ""))
-              .then((svg) => {
-                const m = svg.match(/stars:\s*([0-9][0-9.,]*\s*[kKmM]?)/);
-                if (m) paint(toCount(m[1].replace(/\s+/g, "")));
-              });
-          })
-          .catch(() => { void 0; });
+        (async () => {
+          let n = await fromGitHub();
+          if (n === null) n = await fromUngh();
+          if (n === null) n = await fromShields();
+          if (n === null) n = await fromBadgen();
+          if (typeof n === "number") paint(n);
+        })();
       }
     }
   }
