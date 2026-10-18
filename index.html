@@ -71,6 +71,24 @@
     font-size: 11px; padding: 6px 8px; display: none; white-space: pre-wrap;
     z-index: 9;
   }
+
+#panel {
+  position: fixed; right: 14px; bottom: 14px; display: flex; flex-direction: column; gap: 7px;
+  font: 11px/1.4 ui-monospace, Menlo, monospace; color: #e8e2d4;
+  background: rgba(9, 21, 25, .74); border: 1px solid rgba(232, 226, 212, .14);
+  border-radius: 9px; padding: 10px 12px; backdrop-filter: blur(6px);
+}
+#panel .prow { display: flex; align-items: center; gap: 6px; }
+#panel .prow span { flex: 1; opacity: .6; text-transform: uppercase; letter-spacing: .08em; font-size: 9.5px; }
+#panel .prow b { min-width: 30px; text-align: center; font-weight: 600; font-variant-numeric: tabular-nums; }
+#panel .sbtn {
+  background: #1d1d1f; color: #e8e2d4; border: 1px solid rgba(255, 255, 255, .10);
+  border-radius: 6px; padding: 3px 8px; font: inherit; cursor: pointer;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .14), inset 0 -1px 0 rgba(0, 0, 0, .5), 0 1px 2px rgba(0, 0, 0, .35);
+  transition: box-shadow .12s ease, transform .06s ease;
+}
+#panel .sbtn:hover { box-shadow: inset 0 1px 0 rgba(255, 255, 255, .16), inset 0 -1px 0 rgba(0, 0, 0, .5), 0 0 0 2px rgba(232, 226, 212, .22); }
+#panel .sbtn:active { transform: translateY(1px); }
 </style>
 </head>
 <body>
@@ -78,7 +96,7 @@
 
 <div id="hint" class="hud">
   <div class="row"><b>click</b> the water and the koi come over</div>
-  <div class="row dim"><b>drag</b> across the water to push it around</div>
+  <div class="row dim"><b>drag</b> a lily pad, or drag across the water to push it around</div>
   <div class="row dim"><b>shift-click</b> drops food &nbsp;·&nbsp; <b>space</b> scatter &nbsp;·&nbsp; <b>[ ]</b> koi &nbsp;·&nbsp; <b>h</b> hide</div>
 </div>
 
@@ -87,6 +105,14 @@
   </div>
   <div>
   </div>
+</div>
+
+
+<div id="panel" class="hud">
+  <div class="prow"><span>koi</span><button class="sbtn" data-key="[">&minus;</button><b id="p-koi">16</b><button class="sbtn" data-key="]">+</button></div>
+  <div class="prow"><span>greenery</span><button class="sbtn" data-greenery="-">&minus;</button><b id="p-green">1</b><button class="sbtn" data-greenery="+">+</button></div>
+  <div class="prow"><span>pads</span><button class="sbtn" id="p-grab">grab: on</button></div>
+  <div class="prow"><span>pond</span><button class="sbtn" data-key=" ">scatter</button><button class="sbtn" data-key="h">hide</button></div>
 </div>
 
 <div id="err"></div>

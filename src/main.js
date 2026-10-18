@@ -385,6 +385,7 @@ function fit(initial) {
       }
     }
   }
+  wirePanel();
   // build the scenery once. Rebuilding it on every resize re-rolled the random
   // generator, so all the pads jumped to brand new spots each time the window
   // changed size: you would aim at a pad you could still see and press water.
@@ -392,6 +393,73 @@ function fit(initial) {
     Pond.__sceneryBuilt = true;
     buildSceneryFor(world);
   }
+}
+
+
+// ---- settings panel -------------------------------------------------------
+// The pond is yours to shape: koi count, how much greenery floats on it, and
+// whether pads grab. The button rows dispatch the same keyboard shortcuts, so
+// each action has one code path instead of two.
+function panelLabel(id, text) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = text;
+}
+
+function refreshPanel() {
+  const st = Pond.state;
+  panelLabel("p-koi", String(st.koiCount));
+  panelLabel("p-green", String(Pond.greenery || 1));
+  const g = document.getElementById("p-grab");
+  if (g) g.textContent = "grab: " + (CONFIG.pads.grabbable ? "on" : "off");
+}
+
+// Greenery is the floating mats: more of them means a greener pond. Rebuilt
+// from the original set so every mat keeps a shape the pond already had.
+function setGreenery(level) {
+  const lv = clamp(Math.round(level * 4) / 4, 0.25, 2.5);
+  Pond.greenery = lv;
+  const base = Pond.__matBase || [];
+  const mats = Pond.scenery.surfaceMoss;
+  if (!base.length) { refreshPanel(); return; }
+  const rand = Pond.panelRand || (Pond.panelRand = new Rand(CONFIG.seed ^ 0x51ed));
+  const target = Math.round(base.length * lv);
+  mats.length = 0;
+  for (let i = 0; i < target; i++) {
+    const src = base[i % base.length];
+    const pt = Pond.world.pond.randomPoint(rand, 0.86, 0.12);
+    mats.push({ ...src, x: pt.x, y: pt.y, size: src.size * rand.range(0.8, 1.15) });
+  }
+  refreshPanel();
+}
+
+function wirePanel() {
+  if (Pond.__panelWired) return;
+  Pond.__panelWired = true;
+  Pond.__matBase = Pond.scenery.surfaceMoss.slice();
+  $(document).on("click", "#panel .sbtn", function () {
+    const key = $(this).attr("data-key");
+    const gr = $(this).attr("data-greenery");
+    if (key !== undefined) {
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: key, bubbles: true }));
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: key, bubbles: true }));
+      setTimeout(refreshPanel, 80);
+      return;
+    }
+    if (gr) {
+      setGreenery((Pond.greenery || 1) + (gr === "+" ? 0.25 : -0.25));
+      return;
+    }
+    if (this.id === "p-grab") {
+      CONFIG.pads.grabbable = !CONFIG.pads.grabbable;
+      if (!CONFIG.pads.grabbable) {
+        Pond.state.dragPad = null;
+        Pond.state.hoverPad = null;
+      }
+      Sound.plop(0.45);
+    }
+    refreshPanel();
+  });
+  refreshPanel();
 }
 
 // ------------------------------------------------------------------ input

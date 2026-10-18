@@ -18,7 +18,7 @@ const CONFIG = {
   },
 
   koi: {
-    count: 12,
+    count: 16,
     minCount: 3,
     maxCount: 26,
     length: [30, 46],
@@ -59,22 +59,22 @@ const CONFIG = {
 
   pads: {
     // lily pads are scenery: nothing grabs them, nothing highlights them
-    grabbable: false,
+    grabbable: true,
     clusters: [3, 4],
-    perCluster: [2, 3],
+    perCluster: [3, 4],
     size: [24, 48],
     flowerChance: 0.5,
     dragLag: 0.34, // 0..1, lower = heavier pad
   },
-  weeds: { clumps: 9 },
-  surfaceMoss: { clumps: 20, size: [8, 16] },
+  weeds: { clumps: 14 },
+  surfaceMoss: { clumps: 28, size: [8, 16] },
 
-  moss: { clumps: 34 },
+  moss: { clumps: 48 },
   stones: { count: 12 },
   reeds: { clusters: 5 },
   tufts: { count: 26 },
   shoreFlowers: { clusters: 6 },
-  duckweed: { patches: 7, perPatch: [4, 9] },
+  duckweed: { patches: 10, perPatch: [5, 11] },
 
   // ripple profiles, seconds and backing px. A click is a small cluster of
   // rings that expands once and fades; nothing ever bounces back off the
