@@ -369,6 +369,9 @@ function boot() {
   // pointer type only: a Windows touch laptop reports ontouchstart but still
   // has a mouse and a keyboard, and should keep the desktop UI
   st.touch = !!coarse;
+  // the three line tab and the shape morph belong to touch surfaces only. A
+  // desktop keeps the plain fade and the h key it always had.
+  document.body.classList.toggle("touch-ui", st.touch);
   if (st.touch) {
     const hint = document.getElementById("hint");
     if (hint) {
@@ -2075,7 +2078,8 @@ function setUiHidden(hidden) {
     document.body.classList.toggle("ui-hidden", on);
     if (reveal) reveal.setAttribute("aria-expanded", String(!on));
   };
-  if (!bar || !reveal || still) {
+  const touch = document.body.classList.contains("touch-ui");
+  if (!bar || !reveal || still || !touch) {
     commit();
     return;
   }

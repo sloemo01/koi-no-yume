@@ -29,6 +29,7 @@
   /* A way back. On a phone there is no keyboard, so hiding the bar used to be a
      one way door. This tab lives outside .hud and only exists while the UI is
      hidden. */
+  body:not(.touch-ui) #reveal { display: none; }
   #reveal {
     position: fixed;
     right: 14px;
