@@ -159,6 +159,7 @@ function boot() {
   Pond.butterflies = createButterflies(new Rand(st.seed ^ 0x5bf03635), world.res);
 
   buildSceneryFor(world);
+  wirePanel(); // the panel needs scenery and state; boot is where they exist
 
   // fast-forward the simulation so screenshots and links can start in a
   // settled pond
