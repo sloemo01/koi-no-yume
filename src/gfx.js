@@ -845,12 +845,12 @@ void main() {
   float dash = smoothstep(0.3, 0.76, vnoise(p * 0.185 + vec2(gt * 0.25, -gt * 0.22)));
   // three scales of mask: broad calm water, patches that glint, and a slow
   // breath inside them. Together they keep the pond from sparkling evenly.
-  float broad = smoothstep(0.26, 0.62, vnoise(p * 0.0135 + vec2(gt * 0.032, -gt * 0.024)));
-  float patches = smoothstep(0.30, 0.62, vnoise(p * 0.052 + vec2(gt * 0.07, -gt * 0.055)));
-  float micro = 0.5 + 0.5 * vnoise(p * 0.21 - gt * 0.19);
+  float broad = smoothstep(0.34, 0.66, vnoise(p * 0.0135 + vec2(gt * 0.032, -gt * 0.024)));
+  float patches = smoothstep(0.40, 0.68, vnoise(p * 0.052 + vec2(gt * 0.07, -gt * 0.055)));
+  float micro = 0.40 + 0.60 * vnoise(p * 0.21 - gt * 0.19);
   // Wider masks than before: the glints cover more of the pond instead of
   // gathering in a couple of patches.
-  glint *= broad * patches * micro * dash * 6.4;
+  glint *= broad * patches * micro * dash * 5.9;
   // A second glint field on its own slower clock, so twice as many dashes are
   // moving at any moment and they never pulse in step with the first set.
   float gt2 = floor(uTime * 6.0) / 6.0;
@@ -858,18 +858,17 @@ void main() {
   vec2 tilt2 = swellGrad(p) * 11.0 + along * waveletC * 16.0 + fine * 6.0;
   vec3 nrm2 = normalize(vec3(tilt2, 1.0));
   float glint2 = pow(max(dot(nrm2, sunDir), 0.0), 20.0);
-  glint2 *= smoothstep(0.30, 0.66, vnoise(p * 0.033 + vec2(gt2 * 0.05, -gt2 * 0.04))) * micro * 5.2;
-  glint = floor(clamp(max(glint, glint2 * 0.9), 0.0, 1.0) * 3.0) / 3.0;
-  // 0.58 rather than 0.74: the dimmest of the three levels was veiling the
-  // whole pond, and glints should be dashes of light, not a fog
-  col = mix(col, vec3(0.97, 0.995, 0.96), glint * 0.58 * mask);
+  glint2 *= smoothstep(0.36, 0.70, vnoise(p * 0.033 + vec2(gt2 * 0.05, -gt2 * 0.04))) * micro * 5.4;
+  glint = floor(clamp(max(glint, glint2 * 0.55), 0.0, 1.0) * 3.0) / 3.0;
+  // a modest veil: dashes of light, never fog
+  col = mix(col, vec3(0.97, 0.995, 0.96), glint * 0.52 * mask);
 
   // plus the small hard sparkles that blink between whole frames
   float gl = vnoise(p * 0.23 + vec2(gt * 0.9, -gt * 0.62));
   // sparse but bright: a low threshold here lifts the whole pond into haze
-  float sparkle = pow(max(gl - 0.735, 0.0) * 8.5, 2.2);
+  float sparkle = pow(max(gl - 0.76, 0.0) * 8.0, 2.2);
   float energy = clamp(length(disp) / 6.0, 0.0, 1.0);
-  col += uSun * sparkle * (0.07 + 0.6 * energy) * mask;
+  col += uSun * sparkle * (0.055 + 0.55 * energy) * mask;
 
   // A ripple crest is where the light lands: a bright line along the crest,
   // a thin shadow on its trailing face, and extra sheen on the sun side.
