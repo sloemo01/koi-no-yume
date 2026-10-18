@@ -26,6 +26,66 @@
   }
   .hud { position: fixed; transition: opacity 0.35s ease; }
   .hud.hidden { opacity: 0; pointer-events: none; }
+  /* A way back. On a phone there is no keyboard, so hiding the bar used to be a
+     one way door. This tab lives outside .hud and only exists while the UI is
+     hidden. */
+  #reveal {
+    position: fixed;
+    right: 14px;
+    top: calc(14px + env(safe-area-inset-top, 0px));
+    width: 48px; height: 48px;
+    display: grid; place-items: center;
+    padding: 0;
+    border-radius: 15px;
+    border: 1px solid rgba(250, 250, 250, 0.16);
+    background: rgba(12, 24, 28, 0.52);
+    color: rgba(250, 250, 250, 0.88);
+    -webkit-backdrop-filter: blur(8px);
+    backdrop-filter: blur(8px);
+    opacity: 0;
+    transform: translateY(-8px) scale(0.96);
+    pointer-events: none;
+    transition: opacity 0.24s ease, transform 0.24s ease, background 0.2s ease;
+    z-index: 70;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  body.ui-hidden #reveal { opacity: 0.92; transform: none; pointer-events: auto; }
+  #reveal:hover { background: rgba(20, 38, 44, 0.72); }
+  #reveal:active { transform: scale(0.93); }
+  #reveal svg { width: 20px; height: 20px; display: block; }
+  /* A live copy of the bar, scaled between the bar rect and the tab rect. The
+     real bar and the tab are hidden for the length of the move, so only one
+     object is ever on screen and nothing is left hanging in place. */
+  #morph {
+    position: fixed;
+    left: 0; top: 0;
+    display: grid;
+    place-items: center;
+    color: rgba(250, 250, 250, 0.88);
+    overflow: hidden;
+    width: 0; height: 0;
+    opacity: 0;
+    pointer-events: none;
+    z-index: 85;
+    border: 1px solid rgba(250, 250, 250, 0.16);
+    -webkit-backdrop-filter: blur(8px);
+    backdrop-filter: blur(8px);
+    will-change: left, top, width, height, border-radius, opacity;
+  }
+  #morph > svg { width: 20px; height: 20px; opacity: 0; }
+  .morph-copy {
+    position: fixed;
+    margin: 0;
+    pointer-events: none;
+    z-index: 85;
+    opacity: 1;
+    will-change: transform, opacity;
+  }
+  body.morphing .hud { transition: none; }
+  @media (max-width: 620px) {
+    #reveal { width: 52px; height: 52px; right: 12px; }
+  }
   #hint {
     left: 20px; bottom: 18px;
     /* the instructions must never eat a press meant for a pad */
@@ -388,6 +448,20 @@
     <div class="row"><span class="label">Light</span><button class="step sbtn" id="p-light" style="width:auto;padding:0 8px">bloom: on</button></div>
   </div>
 </div>
+
+<div id="morph" aria-hidden="true">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+       stroke-linecap="round" aria-hidden="true">
+    <path d="M4 7h16M4 12h16M4 17h16"/>
+  </svg>
+</div>
+
+<button id="reveal" type="button" aria-label="Show the controls" title="Show the controls">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+       stroke-linecap="round" aria-hidden="true">
+    <path d="M4 7h16M4 12h16M4 17h16"/>
+  </svg>
+</button>
 
 <div id="err"></div>
 

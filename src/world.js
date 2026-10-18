@@ -310,20 +310,25 @@ function buildScenery(rand, res, pond) {
   // ---- a rowboat, moored offshore and drifting ----------------------------
   const boat = (() => {
     const tex = TEXTURES.paintBoat(rand);
+    // The hull is sized against the frame, not fixed. On a phone the whole world
+    // is about 130 px wide, and a 120 px boat was almost the full width of the
+    // pond and had nowhere legal to sit. It keeps its desktop length and shrinks
+    // with the frame on small screens.
+    const size = Math.round(clamp(res.x * 0.42, 56, 120));
+    const halfW = size * 0.62;
+    const halfH = size * 0.40;
     // a clear stretch of open water, away from the pads and stones
     let spot = null;
     for (let tries = 0; tries < 40 && !spot; tries++) {
-      // keep the hull well inside the frame: it is 60 px long, so a point near
-      // the edge leaves half the boat outside the view
       const p = pond.randomPoint(rand, 0.55, 0.1);
-      if (p.x < 100 || p.x > res.x - 100 || p.y < 60 || p.y > res.y - 60) continue;
+      if (p.x < halfW || p.x > res.x - halfW || p.y < halfH || p.y > res.y - halfH) continue;
       let clear = true;
       for (const pad of pads) {
-        if (Math.hypot(pad.x - p.x, pad.y - p.y) < 84) { clear = false; break; }
+        if (Math.hypot(pad.x - p.x, pad.y - p.y) < size * 0.7) { clear = false; break; }
       }
       if (clear) {
         for (const st of steppingStones) {
-          if (Math.hypot(st.x - p.x, st.y - p.y) < 74) { clear = false; break; }
+          if (Math.hypot(st.x - p.x, st.y - p.y) < size * 0.62) { clear = false; break; }
         }
       }
       if (clear) spot = p;
@@ -333,8 +338,8 @@ function buildScenery(rand, res, pond) {
       tex: tex.canvas,
       x: spot.x, y: spot.y,
       homeX: spot.x, homeY: spot.y,
-      size: 120,
-      margin: 68,
+      size,
+      margin: Math.round(size * 0.57),
       rot: rand.angle(),
       baseRot: 0,
       vx: 0, vy: 0,

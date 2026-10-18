@@ -1150,6 +1150,29 @@ function wirePanel() {
     refreshAdvanced();
     setTimeout(() => { refreshAdvanced(); }, 180);
   });
+  // The bar carries a hide button and a scatter button. Both are plain key
+  // aliases, and on a phone there is no keyboard to press, so the click has to
+  // go through the same door as the key itself.
+  $(document).on("click", ".top-actions .btn[data-key]", function (e) {
+    e.preventDefault();
+    const key = $(this).attr("data-key");
+    document.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true }));
+  });
+  const revealBtn = document.getElementById("reveal");
+  if (revealBtn) {
+    // pointerdown as well as click: a tap on a touch surface delivers the press
+    // before any click is synthesised, and hiding the bar should never depend on
+    // the click arriving.
+    const show = (e) => {
+      if (e) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+      setUiHidden(false);
+    };
+    revealBtn.addEventListener("pointerdown", show);
+    revealBtn.addEventListener("click", show);
+  }
   $(document).on("click", "#panel .sbtn", function () {
     const key = $(this).attr("data-key");
     const gr = $(this).attr("data-greenery");
@@ -1952,6 +1975,141 @@ Pond.__probeToggle = () => {
   return PROBE.on;
 };
 
+// Hiding the bar is a clean view, not a trap. One switch drives the key, the bar
+// button and the corner tab, and the tab lives outside .hud so it survives the
+// hide and can bring everything back on a device with no keyboard.
+//
+// The change is carried by a ghost of the bar's own panel: it collapses onto the
+// tab when the UI hides, and grows back into the bar when the tab is pressed, so
+// the two states look like one object changing shape rather than two swapping.
+// The bar and the tab are the same object in two shapes, so the change between
+// them is carried by one panel that changes size: the contents leave before the
+// shrink starts (squashed labels are what made it look wrong), the panel lands on
+// the tab, and the three lines arrive as it settles. Growing back runs it in
+// reverse.
+function uiMorph(fromRect, toRect, grow, done) {
+  const bar = document.querySelector(".top-actions");
+  const ghost = document.getElementById("morph");
+  if (!ghost || !bar) {
+    if (done) done();
+    return;
+  }
+  const cs = getComputedStyle(bar);
+  const frames = grow
+    ? [
+        {
+          left: fromRect.left + "px", top: fromRect.top + "px",
+          width: fromRect.width + "px", height: fromRect.height + "px",
+          borderRadius: "15px", opacity: 1, offset: 0,
+        },
+        {
+          left: toRect.left + "px", top: toRect.top + "px",
+          width: toRect.width + "px", height: toRect.height + "px",
+          borderRadius: "18px", opacity: 1, offset: 0.94,
+        },
+        {
+          left: toRect.left + "px", top: toRect.top + "px",
+          width: toRect.width + "px", height: toRect.height + "px",
+          borderRadius: "18px", opacity: 0, offset: 1,
+        },
+      ]
+    : [
+        {
+          left: fromRect.left + "px", top: fromRect.top + "px",
+          width: fromRect.width + "px", height: fromRect.height + "px",
+          borderRadius: "18px", opacity: 1, offset: 0,
+        },
+        {
+          left: toRect.left + "px", top: toRect.top + "px",
+          width: toRect.width + "px", height: toRect.height + "px",
+          borderRadius: "15px", opacity: 1, offset: 0.92,
+        },
+        {
+          left: toRect.left + "px", top: toRect.top + "px",
+          width: toRect.width + "px", height: toRect.height + "px",
+          borderRadius: "15px", opacity: 0, offset: 1,
+        },
+      ];
+  Object.assign(ghost.style, {
+    left: fromRect.left + "px",
+    top: fromRect.top + "px",
+    width: fromRect.width + "px",
+    height: fromRect.height + "px",
+    borderRadius: grow ? "15px" : "18px",
+    background: cs.backgroundColor,
+    opacity: "1",
+  });
+  // A balanced curve, not a front loaded one: the old curve arrived at the
+  // destination within the first two thirds and the rest was just a fade, which
+  // read as a snap. fill forwards keeps the panel on its landing spot until the
+  // real thing takes over.
+  // The lines arrive as the panel becomes button sized, so the shape and the
+  // icon are the same object by the end. Growing back, they leave first.
+  const icon = ghost.querySelector("svg");
+  if (icon) {
+    const iconFrames = grow
+      ? [{ opacity: 1, offset: 0 }, { opacity: 0, offset: 0.22 }, { opacity: 0, offset: 1 }]
+      : [{ opacity: 0, offset: 0 }, { opacity: 0, offset: 0.80 }, { opacity: 1, offset: 1 }];
+    icon.animate(iconFrames, { duration: 360, easing: "linear", fill: "forwards" });
+  }
+  const anim = ghost.animate(frames, {
+    duration: 360,
+    easing: "cubic-bezier(0.4, 0, 0.2, 1)",
+    fill: "forwards",
+  });
+  anim.onfinish = () => {
+    ghost.style.opacity = "0";
+    if (done) done();
+  };
+}
+
+function setUiHidden(hidden) {
+  const on = !!hidden;
+  if (on === !!Pond.state.hidden) return;
+  const bar = document.querySelector(".top-actions");
+  const reveal = document.getElementById("reveal");
+  const still = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const commit = () => {
+    Pond.state.hidden = on;
+    $(".hud").toggleClass("hidden", on);
+    document.body.classList.toggle("ui-hidden", on);
+    if (reveal) reveal.setAttribute("aria-expanded", String(!on));
+  };
+  if (!bar || !reveal || still) {
+    commit();
+    return;
+  }
+  const barRect = bar.getBoundingClientRect();
+  const tabRect = reveal.getBoundingClientRect();
+  document.body.classList.add("morphing");
+  reveal.style.transition = "none";
+  if (on) {
+    commit();
+    // the tab is the destination, so it must not appear until the panel has
+    // nearly arrived, or there are two of them on screen at once
+    reveal.style.opacity = "0";
+    uiMorph(barRect, tabRect, false, () => {
+      reveal.style.opacity = "";
+      reveal.style.transition = "";
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => document.body.classList.remove("morphing"));
+      });
+    });
+  } else {
+    // the tab leaves at once, the panel grows out of its corner, then the real
+    // bar takes over in the same frame the panel lands
+    reveal.style.opacity = "0";
+    uiMorph(tabRect, barRect, true, () => {
+      commit();
+      reveal.style.opacity = "";
+      reveal.style.transition = "";
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => document.body.classList.remove("morphing"));
+      });
+    });
+  }
+}
+
 function handleKey(key) {
   const st = Pond.state;
   if (key === " ") {
@@ -1996,8 +2154,7 @@ function handleKey(key) {
     return true;
   }
   if (key === "h") {
-    st.hidden = !st.hidden;
-    $(".hud").toggleClass("hidden", st.hidden);
+    setUiHidden(!st.hidden);
     return true;
   }
   if (key === "f") {
