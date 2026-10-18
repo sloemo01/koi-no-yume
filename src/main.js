@@ -657,11 +657,10 @@ function findPadAt(x, y, slack) {
   for (const pad of pads) {
     const py = pad.y + padBobAt(pad, Pond.world.time);
     const d = Math.hypot(pad.x - x, py - y);
-    // the sprite is drawn pad.size wide, so the pad you see reaches size/2 in
-    // every direction. The physics radius is about a third of that, which is
-    // why pressing the outer half of a lily pad did nothing: the grab area was
-    // a small dot in the middle of it. This is the drawn extent, plus three.
-    if (d <= pad.size * 0.5 + 3 && d < bestD) {
+    // the drawn pad reaches size/2. The grab area is that plus a third again:
+    // a near miss should still take the pad you meant, and the glow shows the
+    // margin so it is never an invisible zone.
+    if (d <= pad.size * 0.5 * 1.35 + 4 && d < bestD) {
       best = pad;
       bestD = d;
     }
@@ -1183,6 +1182,7 @@ function installInput(canvas) {
   const st = Pond.state;
 
   $(canvas).on("pointerdown", (ev) => {
+    markPointer(ev.clientX, ev.clientY);
     const p = pointerPos(canvas, ev.clientX, ev.clientY);
     if (ev.shiftKey) {
       feed(p.x, p.y);
@@ -1217,6 +1217,7 @@ function installInput(canvas) {
     // counted before any early return: this is the number that says whether
     // this page is seeing your pointer at all
     PROBE.counters.moves = (PROBE.counters.moves || 0) + 1;
+    markPointer(ev.clientX, ev.clientY);
     const hp = pointerPos(canvas, ev.clientX, ev.clientY);
     st.pointer.x = hp.x;
     st.pointer.y = hp.y;
