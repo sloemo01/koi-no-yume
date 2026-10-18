@@ -860,7 +860,9 @@ void main() {
   float glint2 = pow(max(dot(nrm2, sunDir), 0.0), 20.0);
   glint2 *= smoothstep(0.30, 0.66, vnoise(p * 0.033 + vec2(gt2 * 0.05, -gt2 * 0.04))) * micro * 5.2;
   glint = floor(clamp(max(glint, glint2 * 0.9), 0.0, 1.0) * 3.0) / 3.0;
-  col = mix(col, vec3(0.97, 0.995, 0.96), glint * 0.74 * mask);
+  // 0.58 rather than 0.74: the dimmest of the three levels was veiling the
+  // whole pond, and glints should be dashes of light, not a fog
+  col = mix(col, vec3(0.97, 0.995, 0.96), glint * 0.58 * mask);
 
   // plus the small hard sparkles that blink between whole frames
   float gl = vnoise(p * 0.23 + vec2(gt * 0.9, -gt * 0.62));
