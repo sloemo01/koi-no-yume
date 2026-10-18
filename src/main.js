@@ -657,10 +657,10 @@ function findPadAt(x, y, slack) {
   for (const pad of pads) {
     const py = pad.y + padBobAt(pad, Pond.world.time);
     const d = Math.hypot(pad.x - x, py - y);
-    // the drawn pad reaches size/2. The grab area is that plus a third again:
-    // a near miss should still take the pad you meant, and the glow shows the
-    // margin so it is never an invisible zone.
-    if (d <= pad.size * 0.5 * 1.35 + 4 && d < bestD) {
+    // exactly the painted pad, plus three pixels of edge. No invisible margin:
+    // a press that grabs something you cannot see is worse than a press that
+    // misses, because the pad then moves somewhere you were not looking.
+    if (d <= pad.size * 0.5 + 3 && d < bestD) {
       best = pad;
       bestD = d;
     }
@@ -670,12 +670,38 @@ function findPadAt(x, y, slack) {
   return best;
 }
 
+// the nearest pad to a point, within a short reach
+function nearestPad(x, y, reach) {
+  let best = null;
+  let bestD = reach;
+  for (const pad of Pond.scenery.pads) {
+    const d = Math.hypot(pad.x - x, pad.y - y);
+    if (d < bestD) { best = pad; bestD = d; }
+  }
+  return best;
+}
+
 function handlePointerDown(x, y) {
   const st = Pond.state;
   st.pointer.down = true;
   st.pointer.x = x;
   st.pointer.y = y;
-  const pad = findPadAt(x, y);
+  let pad = findPadAt(x, y);
+  if (!pad && CONFIG.pads.grabbable) {
+    // a near miss takes the nearest pad and brings it to the pointer, so the
+    // thing you grabbed is under your hand from the first frame. The pad is
+    // never left sitting somewhere you were not looking.
+    const near = nearestPad(x, y, 12);
+    if (near) {
+      near.x = clamp(x, 5, Pond.world.res.x - 5);
+      near.y = clamp(y, 5, Pond.world.res.y - 5);
+      near.homeX = near.x;
+      near.homeY = near.y;
+      near.driftX = 0;
+      near.driftY = 0;
+      pad = near;
+    }
+  }
   if (pad) {
     pad.held = true;
     pad.grabX = pad.x - x;
