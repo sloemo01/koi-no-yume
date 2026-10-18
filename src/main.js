@@ -215,6 +215,22 @@ function boot() {
         x: +k.x.toFixed(1), y: +k.y.toFixed(1), d: +k.depth.toFixed(2),
         v: +k.speed.toFixed(2), state: k.state, variety: k.variety,
       })),
+    minnows: () => world.minnows.map((sc) => ({
+      fish: sc.fish.length,
+      at: [+sc.x.toFixed(0), +sc.y.toFixed(0)],
+      state: sc.state,
+    })),
+    minnowSprite: () => {
+      const sc = world.minnows[0];
+      const f = sc && sc.fish[0];
+      if (!f) return null;
+      const d = f.canvas.getContext("2d").getImageData(0, 0, f.canvas.width, f.canvas.height).data;
+      const set = new Set();
+      for (let i = 0; i < d.length; i += 4) {
+        if (d[i + 3] > 0) set.add((d[i] << 16) | (d[i + 1] << 8) | d[i + 2]);
+      }
+      return { w: f.canvas.width, h: f.canvas.height, spineRow: f.sprite.spineRow, distinctColours: set.size };
+    },
     padIndexOf: (pad) => padIndexOf(pad),
     hitGrid: (i, step, span) => hitGrid(i, step || 3, span || 36),
     grabSelfTest: () => grabSelfTest(),
