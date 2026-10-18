@@ -770,39 +770,53 @@ function installBarExtras() {
   const gh = document.getElementById("p-gh");
   if (gh) {
     gh.addEventListener("click", () => {
+      // going to star it: drop the cached number so the next load asks again
+      try { localStorage.removeItem("kny:stars:4"); } catch (e) { void e; }
       window.open("https://github.com/sloemo01/koi-no-yume", "_blank", "noopener");
     });
-    // The count comes from shields.io, which already asks GitHub for it with its
-    // own tokens and caches the answer, so this page never touches api.github.com
-    // and never spends a visitor's rate limit. Nothing of ours runs: no serverless
-    // function, no scheduled job. shields answers 200 even when it cannot read
-    // GitHub (the value is then an error phrase), which matters because a failed
-    // request is exactly what put a red 403 in the console before.
+    // The count comes from a badge service, never from api.github.com: that
+    // limit is sixty an hour per visitor address, so a public page spends it on
+    // strangers and gets a 403 in the console. Two free services are tried,
+    // shields first and badgen second, both of which keep their own GitHub
+    // credentials and their own cache. Nothing of ours runs for this: no
+    // serverless function, no scheduled job.
     const label = gh.querySelector(".gh-label");
     if (label) {
-      const KEY = "kny:stars:3";
+      const KEY = "kny:stars:4";
+      const FRESH = 60 * 60 * 1000;
       const read = () => {
         try { return JSON.parse(localStorage.getItem(KEY) || "null"); } catch (e) { return null; }
       };
-      const paint = (n) => {
-        if (typeof n === "number" && n > 0) label.textContent = String(n);
-      };
       const toCount = (v) => {
-        const m = String(v || "").trim().match(/^([0-9]+(?:\.[0-9]+)?)\s*([kKmM])?$/);
+        const m = String(v == null ? "" : v).trim().match(/^([0-9]+(?:[.,][0-9]+)?)\s*([kKmM])?$/);
         if (!m) return null;
         const mult = m[2] ? (/[kK]/.test(m[2]) ? 1000 : 1000000) : 1;
-        return Math.round(parseFloat(m[1]) * mult);
+        return Math.round(parseFloat(m[1].replace(",", ".")) * mult);
+      };
+      const paint = (n) => {
+        if (typeof n !== "number" || !isFinite(n)) return false;
+        label.textContent = String(n);
+        try { localStorage.setItem(KEY, JSON.stringify({ n: n, at: Date.now() })); } catch (e) { void e; }
+        return true;
       };
       const cached = read();
-      if (cached && Date.now() - cached.at < 6 * 60 * 60 * 1000) paint(cached.n);
-      if (!cached || Date.now() - cached.at >= 6 * 60 * 60 * 1000) {
+      if (cached && typeof cached.n === "number" && Date.now() - cached.at < FRESH) {
+        label.textContent = String(cached.n);
+      } else {
         fetch("https://img.shields.io/github/stars/sloemo01/koi-no-yume.json")
           .then((r) => (r.ok ? r.json() : null))
           .then((d) => {
             const n = d ? toCount(d.value) : null;
-            if (n === null) return;
-            paint(n);
-            try { localStorage.setItem(KEY, JSON.stringify({ n: n, at: Date.now() })); } catch (e) { void e; }
+            if (n !== null) { paint(n); return null; }
+            // shields answers 200 even when its own GitHub tokens are dry, so the
+            // value can be a sentence. badgen reads the same count a different way
+            // and puts it in the badge title.
+            return fetch("https://badgen.net/github/stars/sloemo01/koi-no-yume")
+              .then((r) => (r.ok ? r.text() : ""))
+              .then((svg) => {
+                const m = svg.match(/stars:\s*([0-9][0-9.,]*\s*[kKmM]?)/);
+                if (m) paint(toCount(m[1].replace(/\s+/g, "")));
+              });
           })
           .catch(() => { void 0; });
       }
