@@ -499,6 +499,16 @@
     __showErr("promise: " + (reason && reason.message ? reason.message : reason));
   });
 </script>
+<script>
+  // Vercel Web Analytics. Loaded only on the deployed host so a local file or a
+  // local server does not ask for a script that is not there.
+  if (/\.vercel\.app$/.test(location.hostname)) {
+    var va = document.createElement("script");
+    va.defer = true;
+    va.src = "/_vercel/insights/script.js";
+    document.head.appendChild(va);
+  }
+</script>
 <script src="vendor/jquery-3.7.1.min.js"></script>
 <script src="src/util.js"></script>
 <script src="src/config.js"></script>

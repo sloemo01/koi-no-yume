@@ -72,19 +72,6 @@ Six koi varieties, four of each by default: kohaku and sanke in bold red wraps w
 
 Around them: schools of tiny minnows that bolt when a koi passes overhead, butterflies that wander and land on flowering lilies, dragonflies that hover and dart, water striders standing on the surface film, oxygen bubbles off the weed beds, lily pads and lotus flowers you can drag, water hyacinth with roots hanging into the water, duckweed drifting in rafts, stepping stones with fish weaving between them, a clay pot on the silty bottom, a wooden rowboat, and cloud shade moving over all of it.
 
-## The rowboat
-
-<img src="docs/boat.png" alt="A wooden rowboat seen from above, painted in pixel art" width="440">
-
-The hull is drawn from a 48 by 24 design, painted at three world pixels per texel and finished with a continuous outline, a capping rail, floorboards with seams, ribs, two thwarts, oars pulled in diagonally, rowlocks, a rope coil and a folded cloth at the stern. It is 120 pixels long on a desktop, 108 on a tablet and 88 on a phone, sized against the frame so it never becomes the whole pond on a narrow screen.
-
-It behaves like everything else in the water. Pick it up and it follows the hand with a slight lean. Throw it and it carries the speed of the throw, slowing on its own and settling where it stops. Push it at a stepping stone and it slides around the stone instead of stopping dead, the same way a lily pad slips past another pad. Left alone it drifts on the current, rocks on its own waterline, and keeps to its stretch of open water.
-
-Both of those last two are physical, not decorative:
-
-- **The hit area is the paint.** Pointing at the hull tests its painted texels, so a press on the transparent corner of its frame counts as water, not boat.
-- **The stone collision is the paint too.** The hull samples 154 points from its own texels, rotated with its heading, and tests each one against each stone's alpha map. An empty pixel inside a stone's bounding box is free water, because the stone is a shape, not a rectangle.
-
 ## Sound
 
 A calm recorded water bed, quiet enough to sit under everything, with a single bird call every eleven to thirty-one seconds at a random side and pitch. Clicks and splashes are deliberately silent. The pond is meant to sound like a place, not like an interface.
