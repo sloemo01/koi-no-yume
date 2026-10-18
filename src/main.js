@@ -9,7 +9,7 @@ const Pond = {
   butterflies: [],
   scenery: null,
   state: {
-    pixelSize: 6,
+    pixelSize: 4,
     koiCount: 12,
     showSpines: false,
     hidden: false,

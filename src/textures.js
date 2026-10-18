@@ -478,42 +478,52 @@ const TEXTURES = (() => {
     ember: { back: "#cf6a3d", belly: "#f0b98a", tail: "#b4552f" },
   };
 
+  // A small fish at 12x8. Tapered body, a fan tail with a fork, a dorsal
+  // ridge, a pectoral fin, a two-tone eye and a lateral stripe. At this size
+  // every pixel is a decision: the silhouette plus the darkest and lightest
+  // tones carry the read, and the outline is a shade of the back, never black,
+  // so a school never looks like scattered bones.
   function paintMinnow(rand, variant) {
     const v = MINNOW_VARIANTS[variant] || MINNOW_VARIANTS.silver;
-    const L = 10;
-    const H = 6;
+    const L = 12;
+    const H = 8;
     const { c, ctx } = makeCanvas(L, H);
-    const spineRow = Math.floor(H / 2);
-    const bodyLen = 7;
+    const spineRow = 4;
     const back = hexToRgb(v.back);
     const belly = hexToRgb(v.belly);
-    for (let x = 0; x < bodyLen; x++) {
-      const t = x / (bodyLen - 1);
-      const half = Math.max(0, Math.round((1.7 - Math.abs(t - 0.42) * 1.9) * 1.0 + 0.4));
-      if (half <= 0) continue;
+    const tail = hexToRgb(v.tail);
+    const dark = shadeRgb(back, 0.66);
+    const rim = shadeRgb(tail, 0.72);
+    const stripe = mixRgb(belly, back, 0.38);
+    // half height per column: snout, head, deep shoulder, thin peduncle
+    const profile = [1, 2, 3, 3, 3, 2, 2, 1, 1];
+    for (let x = 0; x < profile.length; x++) {
+      const half = profile[x];
       for (let y = -half; y <= half; y++) {
-        const y0 = spineRow + y;
-        if (y0 < 0 || y0 >= H) continue;
-        px(ctx, x, y0, rgbToHex(mixRgb(back, belly, clamp(0.5 + y / (half * 2 + 0.001), 0, 1))));
+        const t = (y + half) / (half * 2 || 1);
+        const col = t < 0.34 ? back : t < 0.7 ? mixRgb(back, belly, 0.55) : belly;
+        px(ctx, x, spineRow + y, rgbToHex(col));
+      }
+      if (x > 0) px(ctx, x, spineRow - half - 1, rgbToHex(dark));
+    }
+    // dorsal ridge over the shoulder, anal fin under the belly
+    for (let x = 3; x <= 5; x++) px(ctx, x, spineRow - 4, rgbToHex(shadeRgb(back, 0.86)));
+    px(ctx, 5, spineRow + 3, rgbToHex(shadeRgb(tail, 0.8)));
+    px(ctx, 6, spineRow + 3, rgbToHex(shadeRgb(tail, 0.9)));
+    // pectoral fin laid over the flank
+    px(ctx, 2, spineRow + 2, rgbToHex(mixRgb(tail, belly, 0.4)));
+    // fan tail, forked, with a darker trailing rim
+    for (let x = 9; x <= 11; x++) {
+      const spread = x === 9 ? 1 : 2;
+      for (let y = -spread; y <= spread; y++) {
+        if (x === 11 && y === 0) continue;
+        px(ctx, x, spineRow + y, rgbToHex(x === 11 ? rim : tail));
       }
     }
-    // tail + a soft rim tinted from the back colour (dark rims read as bones
-    // once small fish overlap)
-    const rim = rgbToHex(shadeRgb(back, 0.72));
-    px(ctx, bodyLen, spineRow, v.tail);
-    px(ctx, bodyLen + 1, spineRow - 1, rim);
-    px(ctx, bodyLen + 1, spineRow + 1, rim);
-    px(ctx, bodyLen + 1, spineRow, v.tail);
-    px(ctx, bodyLen + 2, spineRow, rim);
-    px(ctx, 1, spineRow, rim);
-    px(ctx, 1, spineRow - 1, rim);
-    px(ctx, 1, spineRow + 1, rim);
-    px(ctx, bodyLen, spineRow - 2, rim);
-    px(ctx, bodyLen, spineRow + 2, rim);
-    px(ctx, 2, spineRow - 2, rim);
-    px(ctx, 2, spineRow + 2, rim);
-    // eye
-    px(ctx, 1, spineRow - 1, "#12141a");
+    // lateral stripe, then the eye: one dark pixel with a pale pixel above
+    for (let x = 2; x <= 7; x++) px(ctx, x, spineRow, rgbToHex(stripe));
+    px(ctx, 1, spineRow - 1, "#101318");
+    px(ctx, 1, spineRow - 2, rgbToHex(mixRgb(belly, "#ffffff", 0.5)));
     harden(c);
     return { canvas: c, extents: measureExtents(c, spineRow), length: L, height: H, spineRow };
   }
