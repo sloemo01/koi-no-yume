@@ -70,17 +70,17 @@ const MOODS = {
   },
   rain: {
     label: "Rain",
-    // Wet water still catches light, so the glints stay, but at a fraction of a
-    // sunny day. The clouds are the heavy part: deeper shade, more of it, and a
-    // little softness so it reads as cloud shadow and not as painted blobs.
-    skyTop: "#7d8a97", skyBot: "#54626f", skyAmt: 0.38, mist: 0.12,
-    glint: 0.30,
-    bloom: 0.90,
-    glintCol: "#ffffff",
-    desat: 0.16,
-    exposure: 0.93, contrast: 1.03,
-    cloud: 0.58, rain: 1, warm: [0.93, 0.97, 1.02], vignette: 0.15,
-    sunPower: 0.92, cloudSoft: 0.35,
+    // Moonlight's light with weather on it: the same moon white over deep blue,
+    // the same cool glints, and the cloud shade left a little heavier because it
+    // is raining. The drops and their impact rings do the rest.
+    skyTop: "#dbe8ff", skyBot: "#4d5f86", skyAmt: 0.86, mist: 0.14,
+    glint: 1.10,
+    bloom: 1.12,
+    glintCol: "#d8e6ff",
+    desat: 0.24,
+    exposure: 0.96, contrast: 1.09,
+    cloud: 0.26, rain: 1, warm: [0.92, 0.98, 1.10], vignette: 0.16,
+    sunPower: 0.85, cloudSoft: 0.30,
   },
 };
 
