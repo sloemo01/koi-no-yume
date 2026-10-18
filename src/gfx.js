@@ -864,9 +864,10 @@ void main() {
 
   // plus the small hard sparkles that blink between whole frames
   float gl = vnoise(p * 0.23 + vec2(gt * 0.9, -gt * 0.62));
-  float sparkle = pow(max(gl - 0.68, 0.0) * 6.2, 2.2);
+  // sparse but bright: a low threshold here lifts the whole pond into haze
+  float sparkle = pow(max(gl - 0.735, 0.0) * 8.5, 2.2);
   float energy = clamp(length(disp) / 6.0, 0.0, 1.0);
-  col += uSun * sparkle * (0.10 + 0.55 * energy) * mask;
+  col += uSun * sparkle * (0.07 + 0.6 * energy) * mask;
 
   // A ripple crest is where the light lands: a bright line along the crest,
   // a thin shadow on its trailing face, and extra sheen on the sun side.
