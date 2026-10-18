@@ -6,6 +6,32 @@
 const SPINE_NODES = 14;
 const MINNOW_NODES = 8;
 
+// A fish can bend, but it cannot fold flat against itself. Without this the
+// spine could double back on a hard U-turn, and the renderer's tail test then
+// cut through the middle of the body: the fish vanished mid-turn. Clamping the
+// angle between consecutive segments keeps the hull a hull.
+function limitSpineBend(spine, maxStep) {
+  try {
+    for (let pass = 0; pass < 2; pass++) {
+      for (let i = 1; i < spine.length - 1; i++) {
+        const a = spine[i - 1];
+        const b = spine[i];
+        const c = spine[i + 1];
+        const a1 = Math.atan2(b.y - a.y, b.x - a.x);
+        const a2 = Math.atan2(c.y - b.y, c.x - b.x);
+        let d = wrapAngle(a2 - a1);
+        if (Math.abs(d) <= maxStep) continue;
+        const want = a1 + Math.sign(d) * maxStep;
+        const len = Math.hypot(c.x - b.x, c.y - b.y) || 1;
+        c.x = b.x + Math.cos(want) * len;
+        c.y = b.y + Math.sin(want) * len;
+      }
+    }
+  } catch (e) {
+    // a malformed chain is not worth losing the frame over
+  }
+}
+
 // keep the pond visually varied: repeats get less likely, tancho stays rare
 function pickKoiVariety(rand, tally) {
   const palettes = CONFIG.koi.palettes;
@@ -544,6 +570,7 @@ class Koi {
       node.x = lerp(node.x, tx, stiffness);
       node.y = lerp(node.y, ty, stiffness);
     }
+    limitSpineBend(this.spine, 0.42);
     this.buildRenderSpine();
   }
 

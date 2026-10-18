@@ -58,6 +58,9 @@ function buildScenery(rand, res, pond) {
         x, y, size,
         r: size * 0.5,
         rot: rand.angle(),
+      // idle: each pad creeps a couple of pixels around its home on its own
+      // slow cycle, so the surface is never dead still but nothing drifts away
+      waterBias: rand.range(0.65, 1.45),
         homeX: x,
         homeY: y,
         driftX: 0,
@@ -68,17 +71,27 @@ function buildScenery(rand, res, pond) {
         held: false,
         pressedAt: 0,
       };
+      pad.baseRot = pad.rot;
       pads.push(pad);
       if (rand.chance(P.flowerChance)) {
         const colorway = rand.pick(["pink", "pink", "white", "red"]);
+        const fx = x + rand.range(-2.5, 2.5);
+        const fy = y + rand.range(-2.5, 2.5);
         padFlowers.push({
-          x: x + rand.range(-2.5, 2.5),
-          y: y + rand.range(-2.5, 2.5),
+          x: fx,
+          y: fy,
+          // where it sits on its own pad, so it can ride the leaf when the leaf
+          // drifts instead of staying pinned to where the pad used to be
+          ox: fx - pad.x,
+          oy: fy - pad.y,
           size: rand.int(18, 24),
           rot: rand.range(-0.5, 0.5),
+          baseRot: 0,
+          seed: rand.angle(),
           pad,
           tex: TEXTURES.paintLotusFlower(rand, colorway, 15),
         });
+        padFlowers[padFlowers.length - 1].baseRot = padFlowers[padFlowers.length - 1].rot;
       }
     }
   }
@@ -188,6 +201,10 @@ function buildScenery(rand, res, pond) {
       duckweed.push({
         tex: rand.pick(weedTexs),
         x, y,
+        // where this mote grew: a raft drifts with the water but stays in its
+        // own stretch of the pond instead of migrating to a wall
+        homeX: x,
+        homeY: y,
         rot: rand.angle(),
         size: rand.range(1, 1.5),
         phase: rand.angle(),
@@ -283,11 +300,46 @@ function buildScenery(rand, res, pond) {
     hyacinths.push({
       tex: TEXTURES.paintWaterHyacinth(rand),
       x: p.x, y: p.y,
+      homeX: p.x, homeY: p.y,
       size: rand.range(11, 15),
       rot: rand.angle(),
       vx: 0, vy: 0,
     });
   }
+
+  // ---- a rowboat, moored offshore and drifting ----------------------------
+  const boat = (() => {
+    const tex = TEXTURES.paintBoat(rand);
+    // a clear stretch of open water, away from the pads and stones
+    let spot = null;
+    for (let tries = 0; tries < 40 && !spot; tries++) {
+      // keep the hull well inside the frame: it is 60 px long, so a point near
+      // the edge leaves half the boat outside the view
+      const p = pond.randomPoint(rand, 0.55, 0.1);
+      if (p.x < 100 || p.x > res.x - 100 || p.y < 60 || p.y > res.y - 60) continue;
+      let clear = true;
+      for (const pad of pads) {
+        if (Math.hypot(pad.x - p.x, pad.y - p.y) < 84) { clear = false; break; }
+      }
+      if (clear) {
+        for (const st of steppingStones) {
+          if (Math.hypot(st.x - p.x, st.y - p.y) < 74) { clear = false; break; }
+        }
+      }
+      if (clear) spot = p;
+    }
+    if (!spot) spot = pond.randomPoint(rand, 0.6, 0.1);
+    return {
+      tex: tex.canvas,
+      x: spot.x, y: spot.y,
+      homeX: spot.x, homeY: spot.y,
+      size: 120,
+      margin: 68,
+      rot: rand.angle(),
+      baseRot: 0,
+      vx: 0, vy: 0,
+    };
+  })();
 
   // ---- a clay pot on its side in the shallows ------------------------------
   const pot = (() => {
@@ -311,7 +363,7 @@ function buildScenery(rand, res, pond) {
     pot.mouth.y = pot.y + 8 * s2;
   }
 
-  return { pads, padFlowers, shore, duckweed, weeds, surfaceMoss, steppingStones, hyacinths, pot };
+  return { pads, padFlowers, shore, duckweed, weeds, surfaceMoss, steppingStones, hyacinths, pot, boat };
 
 }
 
@@ -319,6 +371,55 @@ function buildScenery(rand, res, pond) {
 function updatePads(dt, time, pads, pond) {
   for (const pad of pads) {
     if (pad.held) continue;
+
+    // ---- a thrown pad skids ------------------------------------------------
+    if (pad.thrown) {
+      const speed = Math.hypot(pad.vx || 0, pad.vy || 0);
+      // a thrown leaf stays in the frame you can see: the pond is much larger
+      // than the view, so the bank check alone let it sail off screen
+      const margin = pad.size * 0.5 + 2;
+      const frame = (typeof Pond !== "undefined" && Pond.world && Pond.world.res)
+        ? Pond.world.res : { x: 450, y: 227 };
+      const wantX = pad.x + (pad.vx || 0) * dt;
+      const wantY = pad.y + (pad.vy || 0) * dt;
+      const nx = Math.min(frame.x - margin, Math.max(margin, wantX));
+      const ny = Math.min(frame.y - margin, Math.max(margin, wantY));
+      // hit the edge: give the velocity back, damped, so it slides along the rim
+      // instead of grinding into it
+      if (nx !== wantX) pad.vx *= -0.3;
+      if (ny !== wantY) pad.vy *= -0.3;
+      if (pond.d(nx, ny) >= 0.88) {
+        // the bank stops it: kill the outward part and splash once
+        pad.vx *= -0.28;
+        pad.vy *= -0.28;
+        spawnRipple("splash", pad.x, pad.y, { scale: 0.5 });
+      } else {
+        pad.x = nx;
+        pad.y = ny;
+      }
+      // a thrown leaf spins, and water slows it quickly
+      pad.rot += (pad.spin || 0) * dt;
+      pad.spin = (pad.spin || 0) + (Math.hypot(pad.vx || 0, pad.vy || 0) > 30 ? dt * 0.9 * Math.sign(pad.spin || 1) : 0);
+      pad.vx *= Math.exp(-dt * 1.7);
+      pad.vy *= Math.exp(-dt * 1.7);
+      // a wake behind it while it is still moving
+      pad.wakeClock = (pad.wakeClock || 0) + dt;
+      if (speed > 45 && pad.wakeClock > 0.07) {
+        pad.wakeClock = 0;
+        spawnRipple("wake", pad.x, pad.y, { scale: 1.2 });
+      }
+      if (speed < 14) {
+        // stopped: this is home now, so it does not slide back to where it began
+        pad.thrown = false;
+        pad.vx = 0;
+        pad.vy = 0;
+        pad.spin = 0;
+        pad.homeX = pad.x;
+        pad.homeY = pad.y;
+        spawnRipple("mouth", pad.x, pad.y, { scale: 0.5 });
+      }
+      continue;
+    }
     // Pads only sip the push. At full strength a drag through open water
     // shoved every pad near the cursor away from it, which reads as a pad
     // moving opposite to your hand.
@@ -341,7 +442,42 @@ function updatePads(dt, time, pads, pond) {
       pad.x = nx;
       pad.y = ny;
     }
-    pad.rot += Math.sin(time * 0.4 + pad.bobPhase) * dt * 0.06;
+
+    // ---- motion that comes from the water --------------------------------
+    // No idle animation: a pad moves because the surface under it is moving. The
+    // swell gives a height field, so its local slope pushes the pad off the crest
+    // the way a leaf slides off a wave, and the flow field carries it slowly.
+    // Scaled by each pad's own sensitivity so they do not move in lockstep.
+    const bias = pad.waterBias || 1;
+    // Sample the slope over a wide baseline. At four pixels the swell's short
+    // wavelengths flipped the sign every few frames, and a pad sitting on one of
+    // those ripples shivered against the surface instead of riding it.
+    const eps = 11;
+    const h0 = waterBobAt(pad.x, pad.y, time);
+    const hx = waterBobAt(pad.x + eps, pad.y, time);
+    const hy = waterBobAt(pad.x, pad.y + eps, time);
+    const slopeX = (hx - h0) / eps;
+    const slopeY = (hy - h0) / eps;
+    pad.driftX -= slopeX * 20 * bias * dt;
+    pad.driftY -= slopeY * 20 * bias * dt;
+    if (typeof Pond !== "undefined" && Pond.flow) {
+      const f = Pond.flow.sample(pad.x, pad.y);
+      pad.driftX += f.x * dt * 0.05 * bias;
+      pad.driftY += f.y * dt * 0.05 * bias;
+    }
+    // Damp the drift, or the home spring rings: a pad would shoot toward home,
+    // overshoot, and bounce back, which is that one leaf twitching on the surface.
+    const damp = Math.exp(-dt * 2.4);
+    pad.driftX *= damp;
+    pad.driftY *= damp;
+    const sp = Math.hypot(pad.driftX, pad.driftY);
+    const maxSp = 4.5;
+    if (sp > maxSp) {
+      pad.driftX *= maxSp / sp;
+      pad.driftY *= maxSp / sp;
+    }
+    // rock about its rest angle instead of accumulating, so it cannot spin away
+    pad.rot = (pad.baseRot === undefined ? pad.rot : pad.baseRot) + slopeY * 0.09 * bias;
   }
 }
 
@@ -357,8 +493,36 @@ function updateDuckweed(dt, time, weed, pond, rate) {
     // rides the eddy behind it instead of drifting on a sine wave
     if (typeof Pond !== "undefined" && Pond.flow) {
       const f = Pond.flow.sample(w.x, w.y);
-      w.vx += f.x * dt * 0.22 * k;
-      w.vy += f.y * dt * 0.22 * k;
+      w.vx += f.x * dt * 0.16 * k;
+      w.vy += f.y * dt * 0.16 * k;
+    }
+    // A weak tether to where the mote grew. Without it the whole population is
+    // a single tracer for the current and ends up piled in whichever corner the
+    // gyre favours; with it each raft wanders ten or twenty pixels and the pond
+    // keeps its cover where it was planted.
+    if (w.homeX !== undefined) {
+      w.vx += (w.homeX - w.x) * 0.045 * dt * k;
+      w.vy += (w.homeY - w.y) * 0.045 * dt * k;
+    }
+    // ---- the frame edge ---------------------------------------------------
+    // The flow grid is zero in its outer cells, so anything the current carried
+    // to the right or bottom edge arrived at still water and stayed there. The
+    // pond's own rim sits outside the frame, so the old "is this still water?"
+    // test never triggered and duckweed stacked along the edges of the view.
+    // Steer floaters back off the frame and clamp them inside it.
+    const res = (typeof Pond !== "undefined" && Pond.world) ? Pond.world.res : null;
+    if (res) {
+      const m = w.margin || 16;
+      let ax = 0;
+      let ay = 0;
+      if (w.x < m) ax += (m - w.x) / m;
+      if (w.x > res.x - m) ax -= (w.x - (res.x - m)) / m;
+      if (w.y < m) ay += (m - w.y) / m;
+      if (w.y > res.y - m) ay -= (w.y - (res.y - m)) / m;
+      if (ax !== 0 || ay !== 0) {
+        w.vx += ax * 11 * dt * k;
+        w.vy += ay * 11 * dt * k;
+      }
     }
     w.vx *= Math.exp(-dt * 1.4);
     w.vy *= Math.exp(-dt * 1.4);
@@ -367,6 +531,13 @@ function updateDuckweed(dt, time, weed, pond, rate) {
     if (pond.d(nx, ny) < 0.9) {
       w.x = nx;
       w.y = ny;
+    }
+    if (res) {
+      // a hard stop at the very edge, so nothing can drift out of view
+      if (w.x < 2) { w.x = 2; w.vx = Math.abs(w.vx) * 0.4; }
+      if (w.x > res.x - 2) { w.x = res.x - 2; w.vx = -Math.abs(w.vx) * 0.4; }
+      if (w.y < 2) { w.y = 2; w.vy = Math.abs(w.vy) * 0.4; }
+      if (w.y > res.y - 2) { w.y = res.y - 2; w.vy = -Math.abs(w.vy) * 0.4; }
     }
     w.rot += dt * 0.1 * (rate === undefined ? 1 : rate);
   }

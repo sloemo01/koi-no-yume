@@ -157,7 +157,11 @@ class FlowField {
 
     // ambient current: a slow breeze that changes direction over minutes, plus a
     // steady through-flow so the pond is not perfectly still
-    const ang = Math.sin(t * 0.037) * 1.1 + Math.cos(t * 0.013) * 0.4;
+    // A slowly rotating gyre. The old ambient swung around one heading and
+    // stayed there for minutes, so a closed pond behaved like a river and every
+    // floating leaf ended up in the same corner. A gyre carries them round the
+    // pond instead of parking them.
+    const ang = t * 0.032 + Math.sin(t * 0.09) * 0.55;
     const force = this.drift * 0.05;
     // Drag, or the field accelerates forever: advection and projection only
     // rearrange momentum, neither of them removes it. With drag the ambient

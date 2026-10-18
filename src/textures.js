@@ -227,7 +227,25 @@ const TEXTURES = (() => {
     const L = Math.round(length);
     // body half-width from the length (a top-view koi wants length/width
     // around 5), then room above and below for the fins and the tail fan
-    const maxHalf = Math.max(2, Math.round(L * 0.115));
+    // Three rows is the floor where a taper and a fork can exist at all. At two
+    // the body was a rectangle and the tail root as wide as the flank, which is
+    // why the orange fish read as a block with a fan glued on.
+    const maxHalf = Math.max(3, Math.round(L * 0.115));
+    // A short fish needs a taller fan. At maxHalf 2 the whole tail was five rows
+    // deep, so any fork wide enough to see removed the middle of it and left two
+    // prongs on a flat wall. Extra spread on the small fish only.
+    const tailSpread = maxHalf * 1.32 + (L < 26 ? 0.6 : 0);
+    // The tail is two lobes, not a paddle with a notch cut into it. `spread` is
+    // how far the outer edge reaches at distance p, `gap` is the half-width of
+    // the fork between them, so the lobes are the band in between. Modelling it
+    // this way keeps two rows of lobe no matter how short the fish is: the old
+    // "erase a band around the spine" approach left a flat wall with prongs.
+    const spreadOf = (p) => rootHalf + (tailSpread - rootHalf) * Math.pow(p, 0.68);
+    // The gap is a fraction of the fan, not a fixed number of rows: that is what
+    // makes the fork the same V at every fish size. It opens from 10% of the
+    // fan at the peduncle to 44% at the trailing edge, so the lobes are real
+    // fins and the cut is unmistakable.
+    const gapOf = (p, spread) => spread * (0.05 + 0.31 * Math.pow(p, 1.3));
     const H = maxHalf * 2 + 6;
     const { c, ctx } = makeCanvas(L, H);
     const spineRow = Math.floor(H / 2);
@@ -427,32 +445,42 @@ const TEXTURES = (() => {
       }
     }
 
-    // --- tail fan: two translucent lobes with the fork between them ---
+    // --- tail fan ---
+    // The root has to be the width the body already is at that point, or the
+    // tail meets the body as a wider bar, which reads as a join. From there the
+    // fan flares and the fork opens gradually instead of from the first pixel.
     const tailBase = hexToRgb(design.tail);
-    const rootHalf = Math.max(1.2, maxHalf * 0.34);
-    const tailSpan = Math.max(2, L - 1 - bodyLen);
+    let rootHalf = Math.max(1.1, maxHalf * bodyHalfAt(1) * 0.94);
+    if (L < 26) rootHalf = Math.max(1, rootHalf * 0.6);
+    const tailSpan = Math.max(2, L - 1 - bodyLen + (L < 26 ? 1 : 0));
+    const spreadAt = [];
     for (let x = bodyLen; x < L; x++) {
       const p = clamp((x - bodyLen) / tailSpan, 0, 1);
-      const half = rootHalf + (maxHalf * 1.15 - rootHalf) * Math.pow(p, 0.7);
-      // the notch runs from the peduncle all the way out: two lobes, not a paddle
-      const inner = rootHalf * 0.3 + half * Math.pow(p, 1.1) * 0.62;
-      for (const side of [-1, 1]) {
-        for (let y = Math.round(inner); y <= Math.round(half); y++) {
-          const yy = Math.round(spineRow + side * y);
-          if (yy < 0 || yy >= H) continue;
-          const rel = (y - inner) / Math.max(0.5, half - inner);
-          const col = mixRgb(tailBase, belly, 0.22 + (1 - rel) * 0.45);
-          px(ctx, x, yy, rgbToHex(shadeRgb(col, 1 - 0.1 * (1 - rel))));
-        }
+      // the last fifth of the tail rounds off, so the lobes end in a point
+      // instead of a square block
+      const tip = p > 0.78 ? (p - 0.78) / 0.22 : 0;
+      const spread = spreadOf(p) - tip * 0.9;
+      const gap = gapOf(p, spread);
+      spreadAt[x] = { spread, gap };
+      for (let yi = -Math.ceil(spread) - 1; yi <= Math.ceil(spread) + 1; yi++) {
+        const ay = Math.abs(yi);
+        if (ay < gap) continue;               // inside the fork: open water
+        if (ay > spread + 0.3) continue;      // outside the lobe
+        const yy = Math.round(spineRow + yi);
+        if (yy < 0 || yy >= H) continue;
+        const rel = (ay - gap) / Math.max(0.5, spread - gap);
+        const col = mixRgb(tailBase, belly, 0.2 + (1 - rel) * 0.42);
+        px(ctx, x, yy, rgbToHex(shadeRgb(col, 1 - 0.1 * (1 - rel))));
       }
     }
-    // rays on the lobes, and a hint of the peduncle's shadow
-    for (const ray of [0.32, 0.6, 0.86]) {
+    // rays down the lobes
+    for (const ray of [0.36, 0.66, 0.9]) {
       const x = bodyLen + Math.round(ray * tailSpan);
-      const half = rootHalf + (maxHalf * 1.15 - rootHalf) * Math.pow(ray, 0.7);
+      const half = spreadOf(ray);
+      const gap = gapOf(ray, half);
       const rayCol = rgbToHex(shadeRgb(tailBase, 0.84));
       for (const side of [-1, 1]) {
-        const yy = Math.round(spineRow + side * half * 0.82);
+        const yy = Math.round(spineRow + side * (gap + (half - gap) * 0.55));
         if (yy > 0 && yy < H) px(ctx, x, yy, rayCol);
       }
     }
@@ -474,6 +502,28 @@ const TEXTURES = (() => {
     for (const side of [-1, 0, 1]) px(ctx, 0, spineRow + side, mouthCol);
 
     outline(c, dark, 40);
+    // the outline traces the whole silhouette and closes any narrow notch, which
+    // turned the fork into a ring. Cut the fork out again, a pixel wider than the
+    // art, so the two lobes are genuinely separate at the tip.
+    {
+      const octx = c.getContext("2d");
+      const img = octx.getImageData(0, 0, L, H);
+      const px32 = img.data;
+      for (let x = bodyLen; x < L; x++) {
+        const p = clamp((x - bodyLen) / Math.max(1, L - 1 - bodyLen), 0, 1);
+        if (p < 0.42) continue;
+        const half = rootHalf + (tailSpread - rootHalf) * Math.pow(p, 0.68);
+        const lim = Math.min(half, gapOf(p, half) + 0.6);
+        for (let yi = -Math.ceil(lim); yi <= Math.ceil(lim); yi++) {
+          if (Math.abs(yi) > lim) continue;
+          const yy = Math.round(spineRow + yi);
+          if (yy < 0 || yy >= H) continue;
+          const i = (yy * L + x) * 4;
+          px32[i + 3] = 0;
+        }
+      }
+      octx.putImageData(img, 0, 0);
+    }
     harden(c);
     return { canvas: c, extents: measureExtents(c, spineRow), length: L, height: H, spineRow, variety: varietyName };
   }
@@ -524,7 +574,7 @@ const TEXTURES = (() => {
     for (let x = 9; x <= 12; x++) {
       const half = x === 9 ? 1 : 2;
       for (let y = -half; y <= half; y++) {
-        if (x >= 11 && y === 0) continue;
+        if (x >= 10 && y === 0) continue;
         px(ctx, x, spineRow + y, rgbToHex(x === 12 ? rim : fin));
       }
     }
@@ -1106,6 +1156,82 @@ const TEXTURES = (() => {
     return c;
   }
 
+  // The rowboat from the user's Figma file, node 2:2 (48x24). Kept as palette
+  // rows rather than a loaded image so it paints into the same pixel grid as
+  // everything else, stays crisp at 2x, and needs no async load at boot.
+  const FIGMA_BOAT = {
+    width: 48,
+    height: 24,
+    palette: {
+      "a": "#2b2426",
+      "b": "#c59d66",
+      "c": "#8c9d92",
+      "d": "#925f3b",
+      "e": "#573c2a",
+      "f": "#865f3e",
+      "g": "#ceb082",
+      "h": "#bc9668",
+      "i": "#462e21",
+      "j": "#d4b57d",
+      "k": "#b17d43",
+      "l": "#8b633f",
+      "m": "#b6b49e",
+      "n": "#967048",
+      "o": "#66472c",
+      "p": "#c2b085",
+      "q": "#ad8456",
+    },
+    rows: [
+      "................................................",
+      "................................................",
+      "................................................",
+      "......aaaaaaaaaaaaaaaaaaaaaaaaa.................",
+      ".....abbbbbbcbbbbbbbbbbcbbbbbbcaaa..............",
+      "....adbddddddeffffddddddeffffddbbbaa............",
+      "....adcghffijefcffeeeeeeefcffeedddbbaa..........",
+      "....adbgcffkjjjhhfllllfleghhflmmeeddbba.........",
+      "....adbghffiikkhhfnnnnfneghhkkiinneehbba........",
+      "....adbghffooiijkfooeofoegkjiiofoppohbhba.......",
+      "....adbghffqqegiikklllflkkiifqqfpepphbhcba......",
+      "....adbgqffqqegfhiijkjkjiifhfqqfppephfhbhba.....",
+      "....adbgfffooegqhfojkiiiegqhfoofoppohbfbhba.....",
+      "....adbghffeqeghqkkiiiiikkhqfeqfllpphbhcba......",
+      "....adbghffqnjjjkiiqqqfqiikjfnnqnnnnhbhba.......",
+      "....adbghffijkkiifooooeoegiikkofooeehbba........",
+      "....adbgcffkjiihhfllllfleghhiimmeeddbba.........",
+      "....adcghffiiefcffeeeefeefcffeiiddbbaa..........",
+      "....adbddddddeffffddddddeffffddbbbaa............",
+      ".....abbbbbbcbbbbbbbbbbcbbbbbbcaaa..............",
+      "......aaaaaaaaaaaaaaaaaaaaaaaaa.................",
+      "................................................",
+      "................................................",
+      "................................................",
+    ],
+  };
+  function paintBoat(rand) {
+    // three world pixels per design texel: the hull is 144 long, about three
+    // times the biggest koi, which is where a rowboat reads next to 30-46px fish
+    const S = 3;
+    const DW = FIGMA_BOAT.width;
+    const DH = FIGMA_BOAT.height;
+    const { c, ctx } = makeCanvas(DW * S, DH * S);
+    const pal = FIGMA_BOAT.palette;
+    for (let y = 0; y < DH; y++) {
+      const row = FIGMA_BOAT.rows[y];
+      for (let x = 0; x < DW; x++) {
+        const key = row[x];
+        if (!key || key === ".") continue;
+        const hex = pal[key];
+        if (!hex) continue;
+        ctx.fillStyle = hex;
+        ctx.fillRect(x * S, y * S, S, S);
+      }
+    }
+    void rand;
+    harden(c);
+    return { canvas: c, width: DW * S, height: DH * S };
+  }
+
   // A clay pot lying on its side in the shallows, half silted in. Terracotta,
   // a dark mouth, an algae fringe along the rim: the one thing in the pond a
   // person clearly put there for the fish.
@@ -1174,7 +1300,7 @@ const TEXTURES = (() => {
     paintKoi, paintMinnow, paintButterfly, paintButterflyRest,
     paintLilyPad, paintLotusFlower, paintMossClump, paintStone,
     paintGrassTuft, paintReedClump, paintShoreFlower, paintDuckweed, paintBlob, paintPondWeed, paintFloatingMoss,
-    paintSteppingStone, paintDragonfly, paintWaterHyacinth, paintClayPot, paintStrider,
+    paintSteppingStone, paintDragonfly, paintWaterHyacinth, paintClayPot, paintStrider, paintBoat,
     KOI_DESIGNS, MINNOW_VARIANTS, DRAGONFLY_PALETTES,
   };
 })();

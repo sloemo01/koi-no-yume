@@ -20,6 +20,8 @@ const Pond = {
     fpsClock: 0,
     pointer: { x: 0, y: 0, down: false },
     dragPad: null,
+    dragBoat: null,
+    hoverBoat: null,
     grab: null,
     lastWake: 0,
     lastDragSpawn: { x: -999, y: -999 },
@@ -447,6 +449,7 @@ function boot() {
 
   installInput(canvas);
   installPanelChrome();
+  installBarExtras();
 
   // paint one frame synchronously: a tab that is not visible yet gets no
   // animation frames, and the pond must not be blank when it is looked at
@@ -709,6 +712,8 @@ function fit(initial) {
         if (typeof o.y === "number") o.y *= ky;
         if (typeof o.homeX === "number") o.homeX *= kx;
         if (typeof o.homeY === "number") o.homeY *= ky;
+        if (typeof o.ox === "number") o.ox *= kx;
+        if (typeof o.oy === "number") o.oy *= ky;
         if (typeof o.driftX === "number") o.driftX = 0;
         if (typeof o.driftY === "number") o.driftY = 0;
       };
@@ -755,6 +760,168 @@ function fit(initial) {
 function panelLabel(id, text) {
   const el = document.getElementById(id);
   if (el) el.textContent = text;
+}
+
+// ---- bar extras: github stars, full screen, frame cap ----------------------
+function installBarExtras() {
+  const gh = document.getElementById("p-gh");
+  const count = document.getElementById("gh-count");
+  if (gh) {
+    const KEY = "kny:stars";
+    const readCache = () => {
+      try { return JSON.parse(localStorage.getItem(KEY) || "null"); } catch (e) { return null; }
+    };
+    const paint = (n) => { if (count && typeof n === "number") count.textContent = String(n); };
+    // A star count that never moves is worse than no count. Revalidate whenever
+    // the tab comes back into view (you just went to GitHub to star it) and
+    // bypass the HTTP cache so GitHub's edge cannot hand back the old number.
+    const refreshStars = (force) => {
+      const cached = readCache();
+      const fresh = cached && Date.now() - cached.at < 20000;
+      if (!force && fresh) { paint(cached.n); return Promise.resolve(cached.n); }
+      return fetch("https://api.github.com/repos/sloemo01/koi-no-yume", { cache: "no-store" })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => {
+          if (!d || typeof d.stargazers_count !== "number") return null;
+          paint(d.stargazers_count);
+          return d.stargazers_count;
+          try { localStorage.setItem(KEY, JSON.stringify({ n: d.stargazers_count, at: Date.now() })); } catch (e) { void e; }
+        })
+        .catch(() => { void 0; });
+    };
+    Pond.refreshStars = () => refreshStars(true);
+    gh.addEventListener("click", () => {
+      // going to star it: make sure the next focus is not served from cache
+      try { localStorage.removeItem(KEY); } catch (e) { void e; }
+      window.open("https://github.com/sloemo01/koi-no-yume", "_blank", "noopener");
+    });
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") refreshStars(true);
+    });
+    window.addEventListener("focus", () => refreshStars(true));
+    refreshStars(false);
+  }
+
+  const full = document.getElementById("p-full");
+  if (full) {
+    const sync = () => {
+      const on = !!document.fullscreenElement;
+      full.textContent = on ? "Exit" : (Pond.state.touch ? "full" : "Full screen");
+      full.classList.toggle("on", on);
+    };
+    full.addEventListener("click", () => {
+      const el = document.documentElement;
+      if (document.fullscreenElement) {
+        document.exitFullscreen && document.exitFullscreen();
+      } else if (el.requestFullscreen) {
+        el.requestFullscreen().catch(() => { void 0; });
+      } else if (el.webkitRequestFullscreen) {
+        el.webkitRequestFullscreen();
+      }
+      setTimeout(sync, 120);
+    });
+    document.addEventListener("fullscreenchange", sync);
+    sync();
+  }
+
+  // ---- frame rate: a menu with a line of context per option ----------------
+  const fpsBtn = document.getElementById("p-fps");
+  const fpsMenu = document.getElementById("fps-menu");
+  const fpsLabel = (v) => (v === 0 ? "native" : String(v));
+  if (fpsBtn && fpsMenu) {
+    wireMenu("p-fps", "fps-menu", ".menu-item", (item) => {
+      Pond.state.fpsCap = Number(item.getAttribute("data-cap"));
+      paintFps();
+    }, paintFps);
+  }
+  function paintFps() {
+    if (!fpsBtn) return;
+    const cap = Pond.state.fpsCap || 0;
+    fpsBtn.textContent = fpsLabel(cap);
+    fpsBtn.classList.toggle("on", cap !== 0);
+    for (const item of document.querySelectorAll("#fps-menu .menu-item")) {
+      item.classList.toggle("on", Number(item.getAttribute("data-cap")) === cap);
+    }
+  }
+  paintFps();
+
+  // ---- mood: same menu, from the bar --------------------------------------
+  const moodBtn = document.getElementById("p-mood");
+  const paintMood = () => {
+    if (!moodBtn) return;
+    const m = currentMood();
+    moodBtn.textContent = m.label || "Mood";
+    for (const item of document.querySelectorAll("#mood-menu .menu-item")) {
+      item.classList.toggle("on", item.getAttribute("data-mood-pick") === (CONFIG.mood && CONFIG.mood.name));
+    }
+  };
+  if (moodBtn) {
+    wireMenu("p-mood", "mood-menu", ".menu-item", (item) => {
+      setMood(item.getAttribute("data-mood-pick"));
+      paintMood();
+    }, paintMood);
+    paintMood();
+  }
+  Pond.paintMood = paintMood;
+
+  // the two colour stops
+  const topPick = document.getElementById("a-top");
+  const botPick = document.getElementById("a-bot");
+  if (topPick) topPick.addEventListener("input", () => { setSkyColour("top", topPick.value); });
+  if (botPick) botPick.addEventListener("input", () => { setSkyColour("bottom", botPick.value); });
+
+  // mood chips
+  for (const chip of document.querySelectorAll("#advanced .chip[data-mood]")) {
+    chip.addEventListener("click", () => {
+      setMood(chip.getAttribute("data-mood"));
+      if (Pond.paintMood) Pond.paintMood();
+    });
+  }
+  setMood((CONFIG.mood && CONFIG.mood.name) || "sunny");
+}
+
+// One menu behaviour for both the frame-rate and the mood buttons: open on
+// hover or click, mark the current choice, close on outside click or Escape.
+function wireMenu(buttonId, menuId, itemsSelector, onPick, markCurrent) {
+  const btn = document.getElementById(buttonId);
+  const menu = document.getElementById(menuId);
+  if (!btn || !menu) return null;
+  const place = () => {
+    const r = btn.getBoundingClientRect();
+    const w = menu.offsetWidth || 248;
+    menu.style.left = Math.max(8, Math.min(window.innerWidth - w - 8, r.right - w)) + "px";
+    menu.style.top = Math.round(r.bottom + 6) + "px";
+  };
+  const open = () => {
+    if (typeof markCurrent === "function") markCurrent();
+    menu.hidden = false;
+    place();
+  };
+  const close = () => { menu.hidden = true; };
+  btn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (menu.hidden) open(); else close();
+  });
+  if (window.matchMedia("(pointer: fine)").matches) {
+    let t = 0;
+    btn.addEventListener("mouseenter", () => { t = setTimeout(open, 140); });
+    btn.addEventListener("mouseleave", () => {
+      clearTimeout(t);
+      setTimeout(() => { if (!menu.matches(":hover")) close(); }, 220);
+    });
+    menu.addEventListener("mouseleave", close);
+  }
+  menu.addEventListener("click", (e) => {
+    const item = e.target.closest(itemsSelector);
+    if (!item) return;
+    onPick(item);
+    close();
+  });
+  document.addEventListener("pointerdown", (e) => {
+    if (!menu.hidden && !menu.contains(e.target) && e.target !== btn) close();
+  }, true);
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") close(); });
+  return { open, close, btn, menu };
 }
 
 function installPanelChrome() {
@@ -905,6 +1072,19 @@ function advStep(key, step) {
   }
 }
 
+function paintSlider(el) {
+  if (!el) return;
+  const min = Number(el.min || 0);
+  const max = Number(el.max || 100);
+  const v = Number(el.value || 0);
+  const pct = max > min ? ((v - min) / (max - min)) * 100 : 0;
+  const host = el.closest(".sl") || el;
+  host.style.setProperty("--fill", pct.toFixed(2) + "%");
+  // the fill has reached the thumb: from here on the thumb rides on white
+  host.classList.toggle("filled", pct > 1.5);
+  el.setAttribute("aria-valuenow", String(v));
+}
+
 function refreshAdvanced() {
   const K = CONFIG.koi;
   const set = (id, txt) => { const el = document.getElementById(id); if (el) el.textContent = txt; };
@@ -915,6 +1095,16 @@ function refreshAdvanced() {
   set("a-small", String(K.smallCount || 0));
   set("a-green", (Pond.greenery || 1).toFixed(2));
   set("a-duck", (CONFIG.duckweed.level || 1).toFixed(2));
+  const m = currentMood();
+  const topEl = document.getElementById("a-top");
+  const botEl = document.getElementById("a-bot");
+  const amtEl = document.getElementById("a-amt");
+  if (topEl && document.activeElement !== topEl && m.skyTop) topEl.value = m.skyTop;
+  if (botEl && document.activeElement !== botEl && m.skyBot) botEl.value = m.skyBot;
+  if (amtEl && document.activeElement !== amtEl) amtEl.value = String(m.skyAmt || 0);
+  set("a-amtval", (m.skyAmt || 0).toFixed(2));
+  paintSlider(document.getElementById("s-count"));
+  paintSlider(document.getElementById("a-amt"));
   set("a-flowers", Math.round((CONFIG.pads.flowerChance || 0.5) * 100) + "%");
   const v = K.varieties || {};
   for (const name of Object.keys(v)) set("a-" + name, String(v[name]));
@@ -945,10 +1135,12 @@ function wirePanel() {
   if (!Pond.scenery || !Pond.scenery.surfaceMoss || !Pond.state) return;
   Pond.__panelWired = true;
   Pond.__matBase = Pond.scenery.surfaceMoss.slice();
-  $(document).on("input", "#advanced input.slider", function () {
+  $(document).on("input", "#advanced input.sl-input, #advanced input.slider-thick, #advanced input.slider", function () {
     const key = $(this).attr("data-adv");
     const val = Number(this.value);
+    paintSlider(this);
     if (key === "count") setKoiTotal(val);
+    else if (key === "skyamt") { setSkyAmount(val); refreshAdvanced(); }
     refreshAdvanced();
   });
   $(document).on("click", "#advanced .abtn", function () {
@@ -1331,11 +1523,200 @@ function findPadAt(x, y) {
   return null;
 }
 
+// The boat is grabbable on its painted texels, exactly like a pad: the point is
+// turned back through the hull's rotation and the sprite's own alpha answers.
+function boatAlphaMap(b) {
+  if (b.alphaMap) return b.alphaMap;
+  const w = b.tex.width;
+  const h = b.tex.height;
+  const data = b.tex.getContext("2d").getImageData(0, 0, w, h).data;
+  const map = new Uint8Array(w * h);
+  for (let i = 0, p = 0; i < data.length; i += 4, p++) map[p] = data[i + 3] > 127 ? 1 : 0;
+  b.alphaMap = map;
+  return map;
+}
+
+function boatContainsPoint(b, x, y, time) {
+  const bob = waterBobAt(b.x, b.y, time) * 0.8;
+  const dx = x - b.x;
+  const dy = y - (b.y + bob);
+  const c = Math.cos(b.rot);
+  const s = Math.sin(b.rot);
+  const w = b.tex.width;
+  const h = b.tex.height;
+  const drawW = b.size;
+  const drawH = b.size * 0.5;
+  const sx = (dx * c + dy * s) * (w / drawW) + w * 0.5;
+  const sy = (-dx * s + dy * c) * (h / drawH) + h * 0.5;
+  if (sx < 0 || sy < 0 || sx >= w || sy >= h) return false;
+  return boatAlphaMap(b)[(sy | 0) * w + (sx | 0)] === 1;
+}
+
+function findBoatAt(x, y) {
+  if (!CONFIG.pads.grabbable) return null;
+  const b = Pond.scenery.boat;
+  if (!b) return null;
+  return boatContainsPoint(b, x, y, Pond.world.time) ? b : null;
+}
+
+// ---- boat against stepping stones, on painted pixels ----------------------
+// A stone is only what its sprite paints. Testing its box would stop the hull on
+// empty water beside a pointed stone, which is the same invisible-boundary
+// problem the lily pads had.
+function stoneAlphaMap(st) {
+  if (st.alphaMap) return st.alphaMap;
+  const w = st.tex.width;
+  const h = st.tex.height;
+  const data = st.tex.getContext("2d").getImageData(0, 0, w, h).data;
+  const map = new Uint8Array(w * h);
+  for (let i = 0, p = 0; i < data.length; i += 4, p++) map[p] = data[i + 3] > 100 ? 1 : 0;
+  st.alphaMap = map;
+  return map;
+}
+
+// does this world point land on a stone's painted pixels?
+function pointOnStone(st, x, y) {
+  const c = Math.cos(-st.rot);
+  const s = Math.sin(-st.rot);
+  const dx = x - st.x;
+  const dy = y - st.y;
+  const lx = dx * c - dy * s;
+  const ly = dx * s + dy * c;
+  const w = st.tex.width;
+  const h = st.tex.height;
+  const sx = (lx / st.w + 0.5) * w;
+  const sy = (ly / st.h + 0.5) * h;
+  if (sx < 0 || sy < 0 || sx >= w || sy >= h) return false;
+  return stoneAlphaMap(st)[(sy | 0) * w + (sx | 0)] === 1;
+}
+
+// Sample points across the hull's own painted pixels, in the boat's local frame.
+// Every fourth texel is enough: at 96x48 that is a few dozen points, and a gap
+// that small cannot hide a stone.
+function boatSamples(b) {
+  if (b.samples) return b.samples;
+  const w = b.tex.width;
+  const h = b.tex.height;
+  const data = b.tex.getContext("2d").getImageData(0, 0, w, h).data;
+  const out = [];
+  for (let ty = 0; ty < h; ty += 4) {
+    for (let tx = 0; tx < w; tx += 4) {
+      if (data[(ty * w + tx) * 4 + 3] <= 100) continue;
+      out.push({
+        x: ((tx + 2) / w - 0.5) * b.size,
+        y: ((ty + 2) / h - 0.5) * (b.size * 0.5),
+      });
+    }
+  }
+  b.samples = out;
+  return out;
+}
+
+function boatVsStone(b, x, y, st) {
+  const dx = x - st.x;
+  const dy = y - st.y;
+  const rad = b.size * 0.5 + 4 + Math.max(st.w, st.h) * 0.5;
+  if (dx * dx + dy * dy > rad * rad) return false;
+  const c = Math.cos(b.rot);
+  const s = Math.sin(b.rot);
+  for (const p of boatSamples(b)) {
+    const wx = x + p.x * c - p.y * s;
+    const wy = y + p.x * s + p.y * c;
+    if (pointOnStone(st, wx, wy)) return true;
+  }
+  return false;
+}
+
+function boatHitsStone(b, x, y) {
+  const stones = Pond.scenery.steppingStones;
+  if (!stones || !stones.length) return false;
+  for (const st of stones) if (boatVsStone(b, x, y, st)) return true;
+  return false;
+}
+
+// The normal of the stone face the hull is pressing against, so a blocked move
+// can slide along it instead of stopping dead.
+function boatContactNormal(b, x, y) {
+  const stones = Pond.scenery.steppingStones || [];
+  const c = Math.cos(b.rot);
+  const s = Math.sin(b.rot);
+  const pts = boatSamples(b);
+  for (const st of stones) {
+    for (const p of pts) {
+      const wx = x + p.x * c - p.y * s;
+      const wy = y + p.x * s + p.y * c;
+      if (!pointOnStone(st, wx, wy)) continue;
+      let nx = wx - st.x;
+      let ny = wy - st.y;
+      const len = Math.hypot(nx, ny);
+      if (len < 0.001) { nx = 0; ny = -1; }
+      else { nx /= len; ny /= len; }
+      return { x: nx, y: ny };
+    }
+  }
+  return null;
+}
+
+// Move the hull from A toward B, sliding along any stone it meets.
+function slideBoat(b, fromX, fromY, toX, toY) {
+  if (!boatHitsStone(b, toX, toY)) return { x: toX, y: toY, blocked: false };
+  const dX = toX - fromX;
+  const dY = toY - fromY;
+  const n = boatContactNormal(b, toX, toY);
+  if (!n) return { x: fromX, y: fromY, blocked: true };
+  const dot = dX * n.x + dY * n.y;
+  const tx = dX - n.x * dot;
+  const ty = dY - n.y * dot;
+  for (const k of [1, 0.75, 0.5, 0.3]) {
+    const qx = fromX + tx * k;
+    const qy = fromY + ty * k;
+    if (!boatHitsStone(b, qx, qy)) return { x: qx, y: qy, blocked: false };
+  }
+  return { x: fromX, y: fromY, blocked: true };
+}
+
+// Nudge the hull out of a stone it is already touching. Used when a drag starts
+// on a stone, because every move from inside is blocked and it could never leave.
+function pushBoatClear(b) {
+  const stones = Pond.scenery.steppingStones || [];
+  for (let i = 0; i < 80; i++) {
+    if (!boatHitsStone(b, b.x, b.y)) return true;
+    // back away from the centre of the stone we are inside. Using the contact
+    // normal fails when the hull is centred on the stone: that normal points
+    // across the stone, so the boat walked along it and stayed stuck.
+    let near = null;
+    let nearD = 1e9;
+    for (const st of stones) {
+      if (!boatVsStone(b, b.x, b.y, st)) continue;
+      const d = Math.hypot(b.x - st.x, b.y - st.y);
+      if (d < nearD) { nearD = d; near = st; }
+    }
+    let nx = 0;
+    let ny = -1;
+    if (near) {
+      nx = b.x - near.x;
+      ny = b.y - near.y;
+      const l = Math.hypot(nx, ny);
+      if (l < 0.5) { nx = 0; ny = -1; } else { nx /= l; ny /= l; }
+    }
+    b.x += nx * 3;
+    b.y += ny * 3;
+  }
+  return !boatHitsStone(b, b.x, b.y);
+}
+
 function handlePointerDown(x, y) {
   const st = Pond.state;
   st.pointer.down = true;
   st.pointer.x = x;
   st.pointer.y = y;
+  // grab off: a press is a press on water. It has to be stopped here, because
+  // the drag itself is driven from st.grab, not from dragPad, so clearing
+  // dragPad afterwards left the pad still following the pointer.
+  if (Pond.state.grabEnabled === false) {
+    handleWaterClick(x, y);
+    return;
+  }
   // A press takes the topmost pad whose disc is under the pointer, and nothing
   // else. The pad keeps the exact offset it had when it was picked up, so it
   // does not jump to the cursor on the first move.
@@ -1344,6 +1725,14 @@ function handlePointerDown(x, y) {
     pad.held = true;
     st.grab = { pad, ox: pad.x - x, oy: pad.y - y };
     st.dragPad = pad;
+    return;
+  }
+  // the hull is a floating object too, so it takes the same press
+  const boat = findBoatAt(x, y);
+  if (boat) {
+    boat.held = true;
+    st.grab = { boat, ox: boat.x - x, oy: boat.y - y };
+    st.dragBoat = boat;
     return;
   }
   handleWaterClick(x, y);
@@ -1355,6 +1744,62 @@ function handlePointerMove(x, y) {
   st.pointer.x = x;
   st.pointer.y = y;
   const grab = st.grab;
+  if (grab && grab.boat) {
+    const b = grab.boat;
+    const marginX = b.size * 0.5;
+    const marginY = b.size * 0.25;
+    const fromX = b.x;
+    const fromY = b.y;
+    // if a drag begins with the hull already touching a stone (it drifted in, or
+    // was let go against one), get it clear first, or every move would be blocked
+    if (boatHitsStone(b, fromX, fromY)) {
+      const wasX2 = b.x;
+      const wasY2 = b.y;
+      if (pushBoatClear(b)) {
+        b.x = clamp(b.x, marginX, world.res.x - marginX);
+        b.y = clamp(b.y, marginY, world.res.y - marginY);
+        b.clearX = b.x;
+        b.clearY = b.y;
+      } else {
+        b.x = wasX2;
+        b.y = wasY2;
+      }
+    }
+    let nx = clamp(x + grab.ox, marginX, world.res.x - marginX);
+    let ny = clamp(y + grab.oy, marginY, world.res.y - marginY);
+    // stones are solid: place the hull at the wanted spot, then push it back out
+    // along the stone's normal, so it slides along the edge instead of crossing
+    // the hand's speed is measured from where the hull actually was before this
+    // move, not from nx: reading it after assigning nx made every throw zero
+    const prevX = b.x;
+    const prevY = b.y;
+    // slide along the stone rather than stopping dead, the way a leaf pushed
+    // against another leaf slips past it
+    const slid = slideBoat(b, prevX, prevY, nx, ny);
+    nx = slid.x;
+    ny = slid.y;
+    if (!slid.blocked) {
+      b.clearX = nx;
+      b.clearY = ny;
+    }
+    b.x = nx;
+    b.y = ny;
+    const now = performance.now();
+    const dtm = clamp((now - (st.lastMoveAt || now)) / 1000, 0.008, 0.05);
+    st.lastMoveAt = now;
+    const vxNow = (nx - prevX) / dtm;
+    const vyNow = (ny - prevY) / dtm;
+    b.throwVX = (b.throwVX || 0) * 0.55 + vxNow * 0.45;
+    b.throwVY = (b.throwVY || 0) * 0.55 + vyNow * 0.45;
+    const moved = Math.hypot(nx - fromX, ny - fromY);
+    b.vx = 0;
+    b.vy = 0;
+    if (moved > 0.2 && world.time - (st.lastBoatWake || 0) > 0.12) {
+      st.lastBoatWake = world.time;
+      spawnRipple("wake", b.x, b.y, { scale: 1.2 });
+    }
+    return;
+  }
   if (grab && grab.pad) {
     const pad = grab.pad;
     // The pad is placed at the pointer plus the offset it was grabbed with.
@@ -1373,6 +1818,15 @@ function handlePointerMove(x, y) {
     // the right one. Rebasing the offset here made a pad jump by the distance
     // the hand had gone past the edge.
     const moved = Math.hypot(nx - pad.x, ny - pad.y);
+    // how fast the hand is going, smoothed: a throw is just the drag's last
+    // velocity handed to the pad when you let go
+    const now = performance.now();
+    const dtm = clamp((now - (st.lastMoveAt || now)) / 1000, 0.008, 0.05);
+    st.lastMoveAt = now;
+    const vxNow = (nx - pad.x) / dtm;
+    const vyNow = (ny - pad.y) / dtm;
+    pad.throwVX = (pad.throwVX || 0) * 0.55 + vxNow * 0.45;
+    pad.throwVY = (pad.throwVY || 0) * 0.55 + vyNow * 0.45;
     pad.x = nx;
     pad.y = ny;
     pad.driftX = 0;
@@ -1417,6 +1871,39 @@ function handlePointerUp() {
   const st = Pond.state;
   st.pointer.down = false;
   st.grab = null;
+  if (st.dragBoat) {
+    const b = st.dragBoat;
+    b.held = false;
+    const res2 = Pond.world.res;
+    const mx = b.size * 0.5;
+    const my = b.size * 0.25;
+    // A shove always glides, proportionally: a slow let-go barely drifts, a flick
+    // carries a couple of hundred pixels and eases out.
+    const throwSpeed = Math.hypot(b.throwVX || 0, b.throwVY || 0);
+    if (throwSpeed > 6) {
+      const k = Math.min(1, 340 / throwSpeed) * 0.12;
+      b.glideVX = b.throwVX * k;
+      b.glideVY = b.throwVY * k;
+      b.glideUntil = Pond.world.time + 3.6;
+      b.vx = 0;
+      b.vy = 0;
+    } else {
+      b.glideVX = 0;
+      b.glideVY = 0;
+      b.glideUntil = 0;
+      b.vx = 0;
+      b.vy = 0;
+    }
+    b.homeX = clamp(b.x, mx, res2.x - mx);
+    b.homeY = clamp(b.y, my, res2.y - my);
+    b.throwVX = 0;
+    b.throwVY = 0;
+    b.driftX = 0;
+    b.driftY = 0;
+    spawnRipple("splash", b.x, b.y, { scale: 1.15 });
+    Sound.plop(0.9);
+    st.dragBoat = null;
+  }
   if (st.dragPad) {
     const pad = st.dragPad;
     pad.held = false;
@@ -1426,8 +1913,23 @@ function handlePointerUp() {
     pad.homeY = clamp(pad.y, 8, Pond.world.res.y - 8);
     pad.driftX = 0;
     pad.driftY = 0;
-    pad.vx = 0;
-    pad.vy = 0;
+    const throwSpeed = Math.hypot(pad.throwVX || 0, pad.throwVY || 0);
+    if (throwSpeed > 70) {
+      // a throw, not a drop: the pad keeps going and skids to a stop. The speed
+      // is capped and damped, otherwise a fast flick launches it out of the pond.
+      const capped = Math.min(throwSpeed, 850) * 0.62;
+      pad.vx = (pad.throwVX / throwSpeed) * capped;
+      pad.vy = (pad.throwVY / throwSpeed) * capped;
+      pad.spin = (2.4 + Math.min(2.2, capped / 260)) * (pad.throwVX >= 0 ? 1 : -1);
+      pad.thrown = true;
+      pad.wakeClock = 0;
+    } else {
+      pad.vx = 0;
+      pad.vy = 0;
+      pad.thrown = false;
+    }
+    pad.throwVX = 0;
+    pad.throwVY = 0;
     // letting go nudges the water once
     spawnRipple("splash", pad.x, pad.y, { scale: 0.9 });
     Sound.plop(0.85);
@@ -1892,7 +2394,8 @@ function installInput(canvas) {
     st.pointer.y = hp.y;
     // the pad under the pointer is the pad that would answer a press, and it
     // is the only pad that lights: what glows is exactly what you can grab
-    st.hoverPad = st.dragPad || findPadAt(hp.x, hp.y);
+    st.hoverPad = st.dragPad || (Pond.state.grabEnabled === false ? null : findPadAt(hp.x, hp.y));
+    st.hoverBoat = st.dragBoat || (Pond.state.grabEnabled === false ? null : findBoatAt(hp.x, hp.y));
     // and if the button came up somewhere this page could not see, let go
     if (st.dragPad && ev.buttons === 0) {
       padDivergenceCheck(st.dragPad);
@@ -1925,13 +2428,15 @@ function installInput(canvas) {
     // was never really resting on
     if (ev && ev.pointerType === "touch") {
       st.hoverPad = null;
+      st.hoverBoat = null;
     }
   });
 
   // the pointer left the page: nothing is under it any more
   $(canvas).on("pointerleave", () => {
-    if (Pond.state.dragPad) return;
+    if (Pond.state.dragPad || Pond.state.dragBoat) return;
     Pond.state.hoverPad = null;
+    Pond.state.hoverBoat = null;
   });
 
   // a native drag or a text selection cancels the pointer halfway through a
@@ -2090,6 +2595,27 @@ function reseed() {
 
 // ------------------------------------------------------------------ loop
 
+// A lotus rides its own pad: it follows the leaf closely and answers the same
+// swell at a fraction of the strength, so it moves a little and never looks
+// like it is sliding around on the leaf.
+function updatePadFlowers(dt, time) {
+  const flowers = Pond.scenery.padFlowers;
+  if (!flowers) return;
+  for (const f of flowers) {
+    const pad = f.pad;
+    if (!pad) continue;
+    const tx = pad.x + (f.ox || 0);
+    const ty = pad.y + (f.oy || 0);
+    const h0 = waterBobAt(tx, ty, time);
+    const hx = waterBobAt(tx + 3, ty, time);
+    const hy = waterBobAt(tx, ty + 3, time);
+    const k = Math.min(1, dt * 16);
+    f.x += (tx + (hx - h0) * 0.14 - f.x) * k;
+    f.y += (ty + (hy - h0) * 0.14 - f.y) * k;
+    f.rot = (f.baseRot || 0) + Math.sin(time * 0.5 + (f.seed || 0)) * 0.022;
+  }
+}
+
 function simulate(dt) {
   const world = Pond.world;
   const time = world.time;
@@ -2132,15 +2658,91 @@ function simulate(dt) {
   for (let i = 0; i < world.count; i++) world.koi[i].update(dt, simWorld);
   for (const school of world.minnows) school.update(dt, simWorld);
   updatePads(dt, time, Pond.scenery.pads, world.pond);
+  updatePadFlowers(dt, time);
   updateDuckweed(dt, time, Pond.scenery.duckweed, world.pond);
   updateDuckweed(dt, time, Pond.scenery.surfaceMoss, world.pond, 0.5);
   if (Pond.scenery.hyacinths) updateDuckweed(dt, time, Pond.scenery.hyacinths, world.pond, 1.5);
+  // a boat is heavy: it answers the water, but slowly
+  if (Pond.scenery.boat) {
+    const b = Pond.scenery.boat;
+    const wasX = b.x;
+    const wasY = b.y;
+    if (b.glideUntil && world.time < b.glideUntil) {
+      // A thrown hull glides on its own momentum: no tether, no ambient current,
+      // nothing to drag it back. It decays and settles where it stops, then the
+      // normal floating behaviour takes over again.
+      b.x += (b.glideVX || 0) * dt * 10;
+      b.y += (b.glideVY || 0) * dt * 10;
+      const decay = Math.exp(-dt * 1.7);
+      b.glideVX = (b.glideVX || 0) * decay;
+      b.glideVY = (b.glideVY || 0) * decay;
+      const slid = slideBoat(b, wasX, wasY, b.x, b.y);
+      b.x = slid.x;
+      b.y = slid.y;
+      if (slid.blocked) {
+        b.glideVX *= 0.15;
+        b.glideVY *= 0.15;
+      }
+      b.x = clamp(b.x, b.size * 0.5, world.res.x - b.size * 0.5);
+      b.y = clamp(b.y, b.size * 0.25, world.res.y - b.size * 0.25);
+      b.homeX = b.x;
+      b.homeY = b.y;
+      b.vx = 0;
+      b.vy = 0;
+    } else {
+      updateDuckweed(dt, time, [b], world.pond, 0.55);
+      const slid = slideBoat(b, wasX, wasY, b.x, b.y);
+      b.x = slid.x;
+      b.y = slid.y;
+      if (slid.blocked) {
+        b.vx *= 0.15;
+        b.vy *= 0.15;
+      } else {
+        b.clearX = b.x;
+        b.clearY = b.y;
+      }
+    }
+    // a hull rocks on its own waterline; without this it slid without moving
+    if (b.baseRot === undefined) b.baseRot = b.rot;
+    b.rot = b.baseRot + Math.sin(time * 0.42 + 1.3) * 0.025;
+  }
   updateButterflies(dt, time, Pond.butterflies, { pond: world.pond, res: world.res, flowers: Pond.scenery.padFlowers });
   updateDragonflies(dt, time, Pond.dragonflies, world.res);
   updateStriders(dt, time, Pond.striders, {
     res: world.res, koi: world.koi, count: world.count, rings: WATER_FIELD.rings,
   });
   updateBubbles(dt, time, world, Pond.scenery.weeds);
+  // rain is not drawn as lines: it is the surface being touched all over, so
+  // each drop is a small ring opening and dying in a fraction of a second
+  const mood = typeof currentMood === "function" ? currentMood() : null;
+  if (mood && mood.rain > 0) {
+    // about twenty drops a second across the whole pond, so the surface is
+    // visibly being hit rather than occasionally tapped
+    Pond.__rainAcc = (Pond.__rainAcc || 0) + dt * 22 * mood.rain;
+    const hits = world.rainHits;
+    if (hits) {
+      for (let i = hits.length - 1; i >= 0; i--) {
+        hits[i].age += dt;
+        if (hits[i].age >= hits[i].life) hits.splice(i, 1);
+      }
+    }
+    while (Pond.__rainAcc >= 1) {
+      Pond.__rainAcc -= 1;
+      Pond.__rainRand = Pond.__rainRand || new Rand((Math.random() * 0xffffffff) >>> 0);
+      const p = world.pond.randomPoint(Pond.__rainRand, 0.92, 0.02);
+      spawnRipple("rain", p.x, p.y, { scale: 0.55 + Math.random() * 0.4 });
+      // the drop itself: a pip that flashes where it hits, so each one can be
+      // seen as an impact and not only as a ring that takes a second to grow
+      const hits = world.rainHits || (world.rainHits = []);
+      hits.push({ x: p.x, y: p.y, age: 0, life: 0.34 + Math.random() * 0.14 });
+      if (hits.length > 80) hits.splice(0, hits.length - 80);
+      // a second, smaller ring a few pixels away reads as the splash crown
+      if (Math.random() < 0.45) {
+        spawnRipple("rain", p.x + (Math.random() - 0.5) * 7, p.y + (Math.random() - 0.5) * 7,
+          { scale: 0.22 + Math.random() * 0.18 });
+      }
+    }
+  }
   // the field itself, then everything floating rides it
   if (Pond.flow) Pond.flow.step(dt, { koi: world.koi, count: world.count });
 
@@ -2387,6 +2989,17 @@ function drawFrame() {
   for (const sd of Pond.striders) {
     gfx.drawSprite(sd.canvas, sd.x, sd.y, sd.canvas.width, sd.canvas.height, sd.rot, [1, 1, 1, 1], false);
   }
+
+  // rain impacts: a bright pip that opens into a soft spot and is gone
+  if (world.rainHits) {
+    for (const h of world.rainHits) {
+      const k = 1 - h.age / h.life;
+      const grow = 1 - k;
+      // a bright core that shrinks, and a pale halo that opens around it
+      gfx.drawSprite(blob, h.x, h.y, 1.4 + 2.0 * k, 1.4 + 2.0 * k, 0, [0.96, 0.99, 1, 0.8 * k], false);
+      gfx.drawSprite(blob, h.x, h.y, 4 + 9 * grow, 3 + 6.5 * grow, 0, [0.80, 0.93, 1, 0.26 * k], false);
+    }
+  }
   // moss mats sit on the surface, a hair proud of the water
   for (const mo of scenery.surfaceMoss) {
     const bob = waterBobAt(mo.x, mo.y, time) * 0.5;
@@ -2400,9 +3013,29 @@ function drawFrame() {
     const k = 1 + df.z * 0.08 + (df.hover || 0) * 0.02;
     gfx.drawSprite(df.canvas, df.x, df.y, df.canvas.width * k, df.canvas.height * k, df.rot, [1, 1, 1, 1], false);
   }
+
   for (const pellet of world.pellets) {
     const bob = waterBobAt(pellet.x, pellet.y, time) * 0.5;
     gfx.drawSprite(Pond.crumbCanvas(), pellet.x, pellet.y + bob, 3, 3, 0, [1, 1, 1, 1], false);
+  }
+  // the boat: a silhouette shadow on the water, then the hull
+  if (scenery.boat) {
+    const b = scenery.boat;
+    const bob = waterBobAt(b.x, b.y, time) * 0.8;
+    const w = b.size;
+    const h = b.size * 0.5;
+    gfx.drawSprite(b.tex, b.x + 2.5, b.y + bob + 3.5, w, h, b.rot,
+      [SHADOW_TINT[0], SHADOW_TINT[1], SHADOW_TINT[2], 0.22], false);
+    // the hull answers the pointer the same way a pad does: its own pixels are
+    // added over the top, so what glows is exactly what a press would take
+    // A lighter glow than a pad gets: the hull is pale wood already, and the
+    // same numbers blew it out to cream instead of lighting it.
+    const boatLit = Pond.state.dragBoat === b ? 1 : (Pond.state.hoverBoat === b ? 0.85 : 0);
+    const bs = 1 + boatLit * 0.05;
+    gfx.drawSprite(b.tex, b.x, b.y + bob, w, h, b.rot, [bs, bs, bs, 1], false);
+    if (boatLit > 0) {
+      gfx.drawGlow(b.tex, b.x, b.y + bob, w, h, b.rot, [1.03, 1.02, 0.9], boatLit * 0.28);
+    }
   }
   if (Pond.state.showSpines) gfx.drawSpinesDebug(world);
   probeTick();
@@ -2434,8 +3067,26 @@ Pond.crumbCanvas = function () {
 let lastFrame = 0;
 function frame(now) {
   const world = Pond.world;
+
+  // The frame cap: draw at most this many frames a second. The skip has to
+  // happen BEFORE lastFrame is advanced, or the skipped time is thrown away and
+  // the whole pond runs in slow motion instead of at a lower frame rate.
+  const cap = Pond.state.fpsCap || 0;
+  if (cap > 0) {
+    const due = 1000 / cap;
+    if (now - (Pond.__drawnAt || 0) < due - 6) {
+      requestAnimationFrame(frame);
+      return;
+    }
+    Pond.__drawnAt = now;
+  } else {
+    Pond.__drawnAt = now;
+  }
+
   if (!lastFrame) lastFrame = now;
-  let dt = Math.min(0.05, (now - lastFrame) / 1000);
+  // the elapsed time since the last frame that was actually drawn, so one drawn
+  // frame at 20 fps carries 50 ms of simulation, not 16
+  let dt = Math.min(0.12, (now - lastFrame) / 1000);
   lastFrame = now;
 
   // fixed-step simulation at 60 Hz
@@ -2443,7 +3094,7 @@ function frame(now) {
   if (!Pond.state.freeze) {
     world.acc = (world.acc || 0) + dt;
     let steps = 0;
-    while (world.acc >= FIXED && steps < 4) {
+    while (world.acc >= FIXED && steps < 8) {
       world.time += FIXED;
       simulate(FIXED);
       world.acc -= FIXED;

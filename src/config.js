@@ -22,7 +22,7 @@ const CONFIG = {
     minCount: 3,
     maxCount: 32,
     smallCount: 8,    // a few small orange fish, not a shoal of them
-    smallLength: 0.56,
+    smallLength: 0.68,
     sizeScale: 1.0,   // every koi's length, as a multiple
     length: [30, 46],
     // ten nishikigoi looks; each fish gets its own painted pattern
@@ -132,12 +132,12 @@ const CONFIG = {
     touch: {
       // a leading crest with two weaker followers, and the crest slows as it
       // travels (radius goes with sqrt of time) the way a real ring does
-      rings: 3, stagger: 0.16, lifetime: 1.9, startRadius: 2,
+      rings: 3, stagger: 0.16, lifetime: 1.9, startRadius: 6,
       expandSpeed: 34, distortion: 5.2, sharpness: 0.42,
       fadeStart: 0.46, decay: 0.28, initialStrength: 1.1, falloff: 0.32,
     },
     mouth: {
-      rings: 1, stagger: 0, lifetime: 0.9, startRadius: 1.2,
+      rings: 1, stagger: 0, lifetime: 0.9, startRadius: 2.5,
       expandSpeed: 26, distortion: 4.4, sharpness: 0.6,
       fadeStart: 0.3, decay: 0.3, initialStrength: 0.6,
     },
@@ -146,12 +146,19 @@ const CONFIG = {
       distortion: 2.6, sharpness: 0.65, fadeStart: 0.3, decay: 0.5,
       initialStrength: 0.55,
     },
+    rain: {
+      // a drop is not a click: it is small and quick, but it has to be bright
+      // enough to read, and cheap enough that twenty a second can live at once
+      rings: 2, stagger: 0.05, lifetime: 1.0, startRadius: 2.6,
+      expandSpeed: 34, distortion: 7.4, sharpness: 0.44,
+      fadeStart: 0.32, decay: 0.30, initialStrength: 2.4, falloff: 0.4,
+    },
     splash: {
       rings: 2, stagger: 0.07, lifetime: 1.2, startRadius: 2, expandSpeed: 38,
       distortion: 4.2, sharpness: 0.42, fadeStart: 0.36, decay: 0.4,
       initialStrength: 0.9,
     },
-    maxActive: 44,
+    maxActive: 110,   // rain needs headroom; wakes are still evicted first
   },
 
   // the water surface pass: whole-pixel refraction of everything below
@@ -227,6 +234,9 @@ const CONFIG = {
     bankAlpha: 0.2,
     butterflyAlpha: 0.12,
   },
+
+  // active mood, filled in by src/moods.js at boot
+  mood: null,
 
   sound: { startOn: false, volume: 0.9 },
 };

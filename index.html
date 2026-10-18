@@ -193,6 +193,87 @@
     .btn { height: 30px; font-size: 13px; padding: 0 10px; }
     .sheet, .sheet.wide { max-height: 74vh; }
   }
+
+  /* github pill: mark, gold star, count */
+  .gh { gap: 7px; padding: 0 11px 0 9px; }
+  .gh-mark { display: block; width: 16px; height: 16px; flex: 0 0 16px; opacity: .92; }
+  .gh:hover .gh-mark { opacity: 1; }
+  .gh-stars { display: inline-flex; align-items: center; gap: 4px; }
+  .gh-star { display: block; width: 16px; height: 16px; flex: 0 0 16px; color: #e8c463; }
+  .gh b {
+    font-weight: 600; font-size: 13px; line-height: 1;
+    color: var(--fg); font-variant-numeric: tabular-nums;
+  }
+  /* the fps menu: a small card of choices, each with one line of context */
+  .menu {
+    position: fixed; z-index: 60; width: 248px; padding: 4px;
+    background: var(--card); border: 1px solid var(--border); border-radius: 9px;
+    box-shadow: 0 16px 44px rgba(0, 0, 0, .5);
+  }
+  .menu[hidden] { display: none; }
+  .menu-item {
+    display: block; width: 100%; text-align: left; padding: 7px 9px;
+    border: 0; border-radius: 6px; background: none; color: var(--fg);
+    font: inherit; cursor: pointer;
+  }
+  .menu-item:hover { background: rgba(255, 255, 255, .07); }
+  .menu-item b { display: block; font-size: 13px; font-weight: 550; }
+  .menu-item span { display: block; font-size: 11.5px; color: var(--muted); margin-top: 2px; line-height: 1.35; }
+  .menu-item.on { background: rgba(255, 255, 255, .09); }
+  .menu-item.on b { color: var(--fg); }
+  .menu-item.on b::after { content: "  ✓"; color: var(--muted); font-weight: 400; }
+  /* colour swatches: a square chip of the colour, with the native picker on top */
+  .swatch {
+    -webkit-appearance: none; appearance: none;
+    width: 34px; height: 24px; padding: 0; border: 1px solid var(--border);
+    border-radius: 6px; background: none; cursor: pointer;
+  }
+  .swatch::-webkit-color-swatch-wrapper { padding: 2px; }
+  .swatch::-webkit-color-swatch { border: none; border-radius: 4px; }
+  .swatch::-moz-color-swatch { border: none; border-radius: 4px; }
+  /* flat slider: no shadows, no rings, no glow. A thick track, a white range
+     with real breathing room inside it, and a thin thumb on the range edge. */
+  .slideblock { padding: 12px 4px 18px; }
+  .slider-head {
+    display: flex; align-items: baseline; justify-content: space-between;
+    margin: 0 4px 12px;
+  }
+  .slider-label { font-size: 19px; font-weight: 600; letter-spacing: -0.02em; color: var(--fg); }
+  .slider-value {
+    font-size: 19px; font-weight: 500; color: var(--fg);
+    font-variant-numeric: tabular-nums; letter-spacing: -0.01em;
+  }
+  .slider-value small { font-size: 15px; font-weight: 400; color: var(--muted); margin-left: 2px; }
+
+  .sl { position: relative; height: 48px; margin: 0 2px; --fill: 50%; }
+  .sl-track {
+    position: absolute; inset: 0; border-radius: 14px;
+    background: #232326; border: 1px solid var(--border);
+  }
+  .sl-range {
+    position: absolute; top: 3px; bottom: 3px; left: 3px;
+    width: calc(var(--fill) - 6px);
+    min-width: 10px;
+    border-radius: 11px;
+    background: var(--fg);
+    transition: width .06s linear;
+  }
+  .sl-thumb {
+    position: absolute; top: 7px; height: 34px; width: 4px;
+    left: var(--fill); transform: translateX(-2px);
+    border-radius: 2px; background: #232326;
+    transition: left .06s linear, width .1s ease;
+    pointer-events: none;
+  }
+  .sl.filled .sl-thumb { background: #ffffff; }
+  .sl:hover .sl-range { background: #ffffff; }
+  .sl:active .sl-thumb { width: 5px; transform: translateX(-2.5px); }
+  .sl-input {
+    position: absolute; inset: 0; width: 100%; height: 100%;
+    margin: 0; opacity: 0; cursor: ew-resize;
+    -webkit-appearance: none; appearance: none;
+  }
+  .sl-input:focus-visible ~ .sl-track { outline: 2px solid rgba(250, 250, 250, .55); outline-offset: 3px; }
 </style>
 </head>
 <body>
@@ -212,18 +293,51 @@
   </div>
 
   <div class="top-actions hud">
+    <button class="btn gh" id="p-gh" title="Star koi-no-yume on GitHub">
+      <svg class="gh-mark" viewBox="0 0 16 16" aria-label="GitHub"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
+      <span class="gh-stars">
+        <svg class="gh-star" viewBox="0 0 16 16" aria-label="stars"><path fill="currentColor" d="M8.00 2.03 L9.62 6.41 L14.28 6.59 L10.62 9.48 L11.88 13.97 L8.00 11.38 L4.12 13.97 L5.38 9.48 L1.72 6.59 L6.38 6.41 Z"/></svg>
+        <b id="gh-count">0</b>
+      </span>
+    </button>
+    <div class="sep"></div>
     <button class="btn" id="p-settings">Settings</button>
     <button class="btn" id="p-advanced">Advanced</button>
     <div class="sep"></div>
     <button class="btn" id="p-grab">grab: on</button>
     <button class="btn" id="p-sound">Sound</button>
+    <button class="btn" id="p-mood" title="Mood">Sunny</button>
+    <button class="btn" id="p-fps" title="Frame rate">60</button>
+    <button class="btn" id="p-full" title="Full screen">Full screen</button>
     <button class="btn" data-key="h">Hide UI <kbd>H</kbd></button>
     <button class="btn" data-key=" ">Scatter <kbd>Space</kbd></button>
   </div>
 
+  <div class="menu" id="mood-menu" hidden>
+    <button class="menu-item" data-mood-pick="sunny"><b>Sunny</b><span>Clear light, warm sun</span></button>
+    <button class="menu-item" data-mood-pick="clear"><b>Clear</b><span>Deep blue water, no cloud shade</span></button>
+    <button class="menu-item" data-mood-pick="mist"><b>Mist</b><span>Thick air, thinning down the frame</span></button>
+    <button class="menu-item" data-mood-pick="sunset"><b>Sunset</b><span>Low warm sun and glints on the water</span></button>
+    <button class="menu-item" data-mood-pick="moonlit"><b>Moonlight</b><span>Cool blue night</span></button>
+    <button class="menu-item" data-mood-pick="rain"><b>Rain</b><span>Small rings all over the surface</span></button>
+  </div>
+  <div class="menu" id="fps-menu" hidden>
+    <button class="menu-item" data-cap="0"><b>Native</b><span>Match the display refresh rate</span></button>
+    <button class="menu-item" data-cap="60"><b>60 fps</b><span>Smooth</span></button>
+    <button class="menu-item" data-cap="30"><b>30 fps</b><span>Balanced, best for an ambient screensaver</span></button>
+    <button class="menu-item" data-cap="20"><b>20 fps</b><span>Battery saver</span></button>
+  </div>
   <div class="sheet wide hud" id="advanced" hidden>
     <h4>koi</h4>
-    <div class="row"><span class="label">Count</span><input id="s-count" class="slider" type="range" min="1" max="48" step="1" value="24" data-adv="count"><b id="a-count">24</b></div>
+    <div class="slideblock">
+      <div class="slider-head"><span class="slider-label">Koi</span><span class="slider-value"><b id="a-count">24</b></span></div>
+      <div class="sl">
+        <div class="sl-track"></div>
+        <div class="sl-range"></div>
+        <input id="s-count" class="sl-input" type="range" min="1" max="48" step="1" value="24" data-adv="count" aria-label="Koi count">
+        <div class="sl-thumb"></div>
+      </div>
+    </div>
     <div class="row"><span class="label">Small fish</span><button class="step abtn" data-adv="small" data-step="-1">&minus;</button><b id="a-small">8</b><button class="step abtn" data-adv="small" data-step="1">+</button></div>
     <div class="divider"></div>
     <h4>varieties</h4>
@@ -233,6 +347,27 @@
     <div class="row"><span class="label">Ogon</span><button class="step abtn" data-adv="v:ogon" data-step="-1">&minus;</button><b id="a-ogon">4</b><button class="step abtn" data-adv="v:ogon" data-step="1">+</button></div>
     <div class="row"><span class="label">Tancho</span><button class="step abtn" data-adv="v:tancho" data-step="-1">&minus;</button><b id="a-tancho">4</b><button class="step abtn" data-adv="v:tancho" data-step="1">+</button></div>
     <div class="row"><span class="label">Shiro</span><button class="step abtn" data-adv="v:shiro" data-step="-1">&minus;</button><b id="a-shiro">4</b><button class="step abtn" data-adv="v:shiro" data-step="1">+</button></div>
+    <div class="divider"></div>
+    <h4>mood</h4>
+    <div class="chips" id="mood-chips">
+      <button class="chip" data-mood="sunny">Sunny</button>
+      <button class="chip" data-mood="clear">Clear</button>
+      <button class="chip" data-mood="mist">Mist</button>
+      <button class="chip" data-mood="sunset">Sunset</button>
+      <button class="chip" data-mood="moonlit">Moonlight</button>
+      <button class="chip" data-mood="rain">Rain</button>
+    </div>
+    <div class="row"><span class="label">Top colour</span><input id="a-top" class="swatch" type="color" value="#ffffff"></div>
+    <div class="row"><span class="label">Bottom colour</span><input id="a-bot" class="swatch" type="color" value="#ffffff"></div>
+    <div class="slideblock">
+      <div class="slider-head"><span class="slider-label">Gradient</span><span class="slider-value"><b id="a-amtval">0.00</b></span></div>
+      <div class="sl">
+        <div class="sl-track"></div>
+        <div class="sl-range"></div>
+        <input id="a-amt" class="sl-input" type="range" min="0" max="1" step="0.02" value="0" data-adv="skyamt" aria-label="Gradient strength">
+        <div class="sl-thumb"></div>
+      </div>
+    </div>
     <div class="divider"></div>
     <h4>planting</h4>
     <div class="row"><span class="label">Greenery</span><button class="step abtn" data-adv="greenery" data-step="-0.25">&minus;</button><b id="a-green">1.00</b><button class="step abtn" data-adv="greenery" data-step="0.25">+</button></div>
@@ -283,6 +418,7 @@
 <script src="src/dragonflies.js"></script>
 <script src="src/striders.js"></script>
 <script src="src/flow.js"></script>
+<script src="src/moods.js"></script>
 <script src="src/gfx.js"></script>
 <script src="src/main.js"></script>
 </body>

@@ -21,6 +21,7 @@ uniform float uRingK[${MAX_RINGS}];
 uniform int uRingCount;
 uniform float uSwellAmp;
 uniform vec3 uSun;
+uniform float uSunPower;
 
 float rimFactorAt(float angle) {
   float f = (angle / 6.28318530718 + 0.5) * 64.0;
@@ -328,13 +329,30 @@ Gfx.prototype.setCommon = function (prog, world) {
   gl.uniform1fv(u.uRim, world.rimTable);
   gl.uniform4f(u.uPond, world.pond.cx, world.pond.cy, world.pond.rx, world.pond.ry);
   const rings = WATER_FIELD.rings;
-  const n = Math.min(rings.length, MAX_RINGS);
   const packed = new Float32Array(MAX_RINGS * 4);
   const packedK = new Float32Array(MAX_RINGS);
+  // The shader only has room for MAX_RINGS rings, and wake rings from fish and
+  // pads fill that buffer on their own. Uploading the array in creation order
+  // meant a fresh click ring waited at the back of the queue until older rings
+  // died, which is exactly the lag you feel on a click. Rank by what the ring is
+  // for, then by how strong it is.
+  const rank = (r) => {
+    const kindWeight = r.kind === "touch" ? 5000
+      : r.kind === "splash" ? 4000
+      : r.kind === "rain" ? 3000
+      : r.kind === "mouth" ? 2000 : 1000;
+    return kindWeight + Math.abs(r.amp) * 100;
+  };
+  const live = [];
+  for (const ring of rings) {
+    if (!ring.alive || Math.abs(ring.amp) <= 0.001) continue;
+    live.push({ r: ring, w: rank(ring) });
+  }
+  live.sort((a, b) => b.w - a.w);
+  const n = Math.min(live.length, MAX_RINGS);
   let count = 0;
   for (let i = 0; i < n; i++) {
-    const ring = rings[i];
-    if (!ring.alive || ring.age <= 0 || Math.abs(ring.amp) <= 0.001) continue;
+    const ring = live[i].r;
     packed[count * 4] = ring.x;
     packed[count * 4 + 1] = ring.y;
     packed[count * 4 + 2] = ring.radius;
@@ -362,7 +380,12 @@ Gfx.prototype.drawBed = function (world) {
   gl.uniform3f(u.uDeep, ...bed.deep.map((v) => v / 255));
   gl.uniform3f(u.uAlgae, ...bed.algae.map((v) => v / 255));
   gl.uniform3f(u.uPebble, ...bed.pebble.map((v) => v / 255));
-  gl.uniform1f(u.uCaustics, CONFIG.caustics.amp);
+  // a mood can soften the caustics: an overcast sky throws no hard light, so the
+  // dappling on the floor has to go diffuse with it
+  const causticAmp = (CONFIG.mood && typeof CONFIG.mood.caustics === "number")
+    ? CONFIG.caustics.amp * CONFIG.mood.caustics
+    : CONFIG.caustics.amp;
+  gl.uniform1f(u.uCaustics, causticAmp);
   gl.bindVertexArray(this.quadVao);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
 };
@@ -380,6 +403,10 @@ Gfx.prototype.drawWater = function (world) {
   gl.uniform1f(u.uBend, w.bend);
   gl.uniform1f(u.uMaxBend, w.maxBend);
   gl.uniform1f(u.uSpecular, w.specular);
+  // How much direct sun the water is allowed to throw back. Overcast has no sun
+  // disc at all, so the glint and the sparkle have to go, or the pond reads as
+  // sunny with a grey filter on it.
+  gl.uniform1f(u.uSunPower, (CONFIG.mood && typeof CONFIG.mood.sunPower === "number") ? CONFIG.mood.sunPower : 1);
   gl.uniform1f(u.uShallowLift, w.shallowLift);
   gl.uniform1f(u.uShallowMix, w.shallowMix);
   gl.uniform3f(u.uShallowColor, w.shallowColor[0], w.shallowColor[1], w.shallowColor[2]);
@@ -591,13 +618,34 @@ Gfx.prototype.present = function (world) {
   gl.uniform1i(prog.u.uGlow, 2);
   gl.uniform2f(prog.u.uRes, this.width, this.height);
   gl.uniform1f(prog.u.uTime, world.time);
-  gl.uniform1f(prog.u.uStrength, bloom.enabled ? bloom.strength : 0);
-  gl.uniform1f(prog.u.uGlowStrength, bloom.enabled ? bloom.glow : 0);
+  const mood = (typeof currentMood === "function" ? currentMood() : null) || {
+    warm: [1, 0.995, 0.972], sky: [1, 1, 1], skyAmt: 0, mist: 0,
+  };
+
+  gl.uniform1f(prog.u.uStrength, bloom.enabled ? bloom.strength * (mood.bloom || 1) : 0);
+  gl.uniform1f(prog.u.uGlowStrength, bloom.enabled ? bloom.glow * (mood.bloom || 1) : 0);
   gl.uniform1f(prog.u.uVignette, CONFIG.vignette);
   gl.uniform1f(prog.u.uCloudShade, CONFIG.clouds.shade);
   gl.uniform1f(prog.u.uCloudScale, CONFIG.clouds.scale);
   gl.uniform1f(prog.u.uCloudDrift, CONFIG.clouds.drift);
-  gl.uniform3f(prog.u.uWarm, 1.0, 0.995, 0.972);
+  gl.uniform3f(prog.u.uWarm, mood.warm[0], mood.warm[1], mood.warm[2]);
+  const top = mood.top || [1, 1, 1];
+  const bot = mood.bottom || top;
+  gl.uniform3f(prog.u.uSkyTop, top[0], top[1], top[2]);
+  gl.uniform3f(prog.u.uSkyBot, bot[0], bot[1], bot[2]);
+  gl.uniform1f(prog.u.uMoodAmt, mood.skyAmt || 0);
+  gl.uniform1f(prog.u.uMist, mood.mist || 0);
+  gl.uniform1f(prog.u.uSkyLift, mood.skyLift || 0);
+  gl.uniform1f(prog.u.uCloudSoft, mood.cloudSoft || 0);
+  gl.uniform1f(prog.u.uMoon, mood.moon || 0);
+  const mc = typeof hexToUnit === "function" ? hexToUnit(mood.moonCol || "#c3d6ff") : [0.76, 0.84, 1.0];
+  gl.uniform3f(prog.u.uMoonCol, mc[0], mc[1], mc[2]);
+  gl.uniform1f(prog.u.uGlint, mood.glint || 0);
+  const gc = typeof hexToUnit === "function" ? hexToUnit(mood.glintCol || "#ffffff") : [1, 1, 1];
+  gl.uniform3f(prog.u.uGlintCol, gc[0], gc[1], gc[2]);
+  gl.uniform1f(prog.u.uDesat, mood.desat || 0);
+  gl.uniform1f(prog.u.uContrast, mood.contrast || 1);
+  gl.uniform1f(prog.u.uExposure, mood.exposure || 1);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
 };
 
@@ -725,6 +773,28 @@ void main() {
       bestU = mix(a.z, b.z, t);
       bestSide = (ab.x * (p.y - c.y) - ab.y * (p.x - c.x)) >= 0.0 ? 1.0 : -1.0;
     }
+  }
+
+  // Fragments past the last spine node are not fish: the spine stops at the
+  // tail. Without this they all project onto that node and sample the sprite's
+  // final column at ever larger lateral offsets, which paints a ring around the
+  // tail tip. That ring is what made every tail look joined at the end.
+  vec4 lastNode = texelFetch(uSpine, ivec2(uSpineN - 1, 0), 0);
+  vec4 prevNode = texelFetch(uSpine, ivec2(max(uSpineN - 2, 0), 0), 0);
+  vec2 tailDir = lastNode.xy - prevNode.xy;
+  float tailLen = length(tailDir);
+  if (tailLen > 0.001) {
+    float beyond = dot(p - lastNode.xy, tailDir / tailLen);
+    if (beyond > 0.35) discard;
+  }
+  // and nothing in front of the snout either
+  vec4 firstNode = texelFetch(uSpine, ivec2(0, 0), 0);
+  vec4 secondNode = texelFetch(uSpine, ivec2(1, 0), 0);
+  vec2 headDir = firstNode.xy - secondNode.xy;
+  float headLen = length(headDir);
+  if (headLen > 0.001) {
+    float ahead = dot(p - firstNode.xy, headDir / headLen);
+    if (ahead > 0.35) discard;
   }
 
   float lateral = bestDist * bestSide / max(uScale, 0.001);
@@ -901,7 +971,7 @@ void main() {
   // broad patches of light on the surface, drifting slowly
   float lightPatch = vnoise(p * 0.0128 + vec2(uTime * 0.007, -uTime * 0.005));
   float lightPatchB = vnoise(p * 0.031 - 7.0 + vec2(-uTime * 0.01, uTime * 0.008));
-  col += uSun * ((lightPatch - 0.5) * 0.05 + (lightPatchB - 0.5) * 0.022) * mask;
+  col += uSun * ((lightPatch - 0.5) * 0.05 + (lightPatchB - 0.5) * 0.022) * mask * (0.3 + 0.7 * uSunPower);
 
   // ---- white shimmer -------------------------------------------------
   // Sun glint: where the swell tilts the surface so it throws the sun back
@@ -947,14 +1017,14 @@ void main() {
   glint2 *= smoothstep(0.36, 0.70, vnoise(p * 0.033 + vec2(gt2 * 0.05, -gt2 * 0.04))) * micro * 5.4;
   glint = floor(clamp(max(glint, glint2 * 0.55), 0.0, 1.0) * 3.0) / 3.0;
   // a modest veil: dashes of light, never fog
-  col = mix(col, vec3(0.97, 0.995, 0.96), glint * 0.52 * mask);
+  col = mix(col, vec3(0.97, 0.995, 0.96), glint * 0.52 * mask * uSunPower);
 
   // plus the small hard sparkles that blink between whole frames
   float gl = vnoise(p * 0.23 + vec2(gt * 0.9, -gt * 0.62));
   // sparse but bright: a low threshold here lifts the whole pond into haze
   float sparkle = pow(max(gl - 0.76, 0.0) * 8.0, 2.2);
   float energy = clamp(length(disp) / 6.0, 0.0, 1.0);
-  col += uSun * sparkle * (0.055 + 0.55 * energy) * mask;
+  col += uSun * sparkle * (0.055 + 0.55 * energy) * mask * uSunPower;
 
   // A ripple crest is where the light lands: a bright line along the crest,
   // a thin shadow on its trailing face, and extra sheen on the sun side.
@@ -963,10 +1033,10 @@ void main() {
   // made clicks look like grooves cut into the water.
   float crest = clamp(ringCrest(p, 0.0), 0.0, 1.4);
   float crestShadow = clamp(ringCrest(p, 2.4), 0.0, 1.2);
-  col += uSun * crest * 0.24 * mask;
+  col += uSun * crest * 0.24 * mask * (0.35 + 0.65 * uSunPower);
   col *= 1.0 - crestShadow * 0.16 * mask;
   vec2 crestNormal = normalize(disp + vec2(1e-5, 1e-5));
-  col += uSun * crest * max(dot(crestNormal, normalize(uLight)), 0.0) * uSpecular * 0.9 * mask;
+  col += uSun * crest * max(dot(crestNormal, normalize(uLight)), 0.0) * uSpecular * 0.9 * mask * uSunPower;
 
   outColor = vec4(col, 1.0);
 }`;
@@ -1022,6 +1092,15 @@ uniform float uStrength, uVignette;
 uniform float uGlowStrength;
 uniform float uCloudShade, uCloudScale, uCloudDrift;
 uniform vec3 uWarm;
+uniform vec3 uSkyTop, uSkyBot;
+uniform float uMoodAmt, uMist, uGlint;
+uniform float uSkyLift;
+uniform float uCloudSoft;
+uniform float uMoon;
+uniform vec3 uMoonCol;
+uniform vec3 uGlintCol;
+uniform float uDesat;
+uniform float uContrast, uExposure;
 in vec2 vUV;
 out vec4 outColor;
 
@@ -1093,11 +1172,86 @@ void main() {
   // Pixel art, not photography: two flat tones with hard edges, the way a
   // shadow is painted into a tile. The outer tone carries the shape, the inner
   // one marks the dense core of the mass.
-  shade = shade > 0.62 ? 1.0 : (shade > 0.26 ? 0.6 : 0.0);
+  float shadeHard = shade > 0.62 ? 1.0 : (shade > 0.26 ? 0.6 : 0.0);
+  // Overcast has no hard cloud edges: the whole sky is one diffuser, so the
+  // shade has to be a smooth ramp instead of the two painted tones. Blending
+  // between the two keeps sunny and sunset exactly as they were.
+  float shadeSoft = smoothstep(0.18, 0.82, shade);
+  shade = mix(shadeHard, shadeSoft, uCloudSoft);
   // and it cools the water rather than just dimming it, the way shade on water
   // goes blue-grey under a white sun
   col *= 1.0 - shade * uCloudShade * vec3(1.08, 0.98, 0.86);
   col *= uWarm;
+  // vUV.y = 0 is the BOTTOM of the frame in this pass, so every falloff from the
+  // top has to climb with vy, not with 1 - vy
+  float vy = clamp(vUV.y, 0.0, 1.0);
+  float topMask = pow(vy, 1.45);
+  // two stops, not one colour: whatever is picked for the top fades into
+  // whatever is picked for the bottom as the frame comes down
+  vec3 grad = mix(uSkyBot, uSkyTop, topMask);
+  col = mix(col, col * grad, uMoodAmt);
+  // A multiply-only veil can darken water but never brighten it, so a bright
+  // overcast sky left the pond as dark as a rainy one. Lift the water toward
+  // the sky colour instead, most of it toward the top of the frame where the
+  // sky is actually reflected.
+  if (uSkyLift > 0.001) {
+    // concentrated toward the top of the frame and the brightest water: a
+    // blanket lift washed every colour in the pond toward white
+    float liftW = pow(topMask, 2.0);
+    float luma0 = dot(col, vec3(0.2126, 0.7152, 0.0722));
+    float specW = smoothstep(0.20, 0.75, luma0);
+    col = mix(col, grad, uSkyLift * liftW * (0.45 + 0.55 * specW));
+  }
+  // low sun catching the water: warm light on the brightest pixels, strongest
+  // toward the top where the sun is
+  if (uGlint > 0.001) {
+    float luma = dot(col, vec3(0.2126, 0.7152, 0.0722));
+    float glint = smoothstep(0.52, 0.92, luma) * uGlint * (0.30 + 0.70 * topMask);
+    col += uGlintCol * glint * 0.6;
+  }
+  // mist: two drifting layers, thick toward the top and thinner down the frame,
+  // never zero at the bottom because mist fills the air rather than pooling at
+  // one edge
+  // heavy weather drains colour: nothing looks right in moonlight with bright
+  // green lily pads in it
+  if (uDesat > 0.001) {
+    col = mix(col, vec3(dot(col, vec3(0.2126, 0.7152, 0.0722))), uDesat);
+  }
+  if (uMist > 0.001) {
+    float m1 = cloudFbm(vec2(p.x * 0.0035 + uTime * 0.010, p.y * 0.0075 - uTime * 0.003));
+    float m2 = cloudFbm(vec2(p.x * 0.0110 - uTime * 0.018, p.y * 0.0160 + uTime * 0.006) + 31.0);
+    float m = m1 * 0.68 + m2 * 0.32;
+    // Mist hangs in the air above the water: nearly all of it belongs at the
+    // top of the frame. An even veil over the whole picture just made the pond
+    // look like it had been photographed through greased glass.
+    float weight = 0.10 + 0.90 * pow(vy, 1.9);
+    float veil = smoothstep(0.34, 0.86, m) * uMist * weight;
+    col = mix(col, vec3(0.87, 0.91, 0.90), veil * 0.55);
+    // distance wash: the far water loses contrast in thick air
+    // The distance wash used to pull colour out of the whole frame, which
+    // dropped the contrast along with the saturation. A little is enough: the
+    // haze itself already does the softening.
+    col = mix(col, vec3(dot(col, vec3(0.2126, 0.7152, 0.0722))), uMist * 0.04 * weight);
+  }
+  // ---- the moon ----------------------------------------------------------
+  // A top-down pond has no sky to hang a moon in, so moonlight has to arrive as
+  // light on the water: one broad cool pool with a bright core, upper right,
+  // plus a very faint wash over everything so the whole frame reads moonlit and
+  // not just one corner.
+  if (uMoon > 0.001) {
+    vec2 mp = vec2(0.68, 0.78);
+    vec2 rel = vUV - mp;
+    rel.x *= uRes.x / max(uRes.y, 1.0) * 0.62;
+    float r = length(rel);
+    float pool = exp(-r * 7.5) * 0.95 + exp(-r * 2.0) * 0.34;
+    float sheet = smoothstep(0.05, 0.95, vUV.y) * 0.10;
+    col += uMoonCol * (pool + sheet) * uMoon * 0.72;
+  }
+
+  // exposure and contrast last: tint alone only ever washes a picture, it cannot
+  // make the darks deep or the highlights hot
+  col *= uExposure;
+  col = (col - 0.5) * uContrast + 0.5;
   vec2 q = vUV - 0.5;
   col *= 1.0 - uVignette * pow(clamp(length(q) * 1.5, 0.0, 1.0), 2.2);
   outColor = vec4(col, 1.0);

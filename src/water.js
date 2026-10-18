@@ -68,7 +68,9 @@ function spawnRipple(kind, x, y, opts) {
       age: 0,
     };
     ring.radius = ring.startRadius;
-    ring.amp = 0;
+    // visible on the very first frame: waiting for the animation's first step
+    // left the pond blank for one frame, which reads as a lag on a click
+    ring.amp = ring.strength;
     ring.spawnRec = probe;
     WATER_FIELD.rings.push(ring);
     WATER_FIELD.spawned++;
@@ -91,7 +93,9 @@ function armRing(ring) {
         const p = clamp(ring.p, 0, 1);
         ring.age = p * ring.profile.lifetime;
         // sqrt: a ring runs out of speed as it grows, like water does
-        ring.radius = ring.startRadius + ring.expand * Math.sqrt(p);
+        // p^0.42 opens quickly then slows: sqrt was too lazy in the first
+        // 100 ms, so the click looked like it landed late
+        ring.radius = ring.startRadius + ring.expand * Math.pow(p, 0.42);
         ring.amp = ring.strength * ringFade(p, ring.profile);
       },
       complete: () => {
