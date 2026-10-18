@@ -772,19 +772,40 @@ function installBarExtras() {
     gh.addEventListener("click", () => {
       window.open("https://github.com/sloemo01/koi-no-yume", "_blank", "noopener");
     });
-    // The count is a static file, refreshed by a scheduled GitHub Action. The
-    // page never calls api.github.com: that quota is per visitor address, so a
-    // public site spends it on strangers and gets a 403 in the console. This is
-    // one small same origin file off the CDN, so nothing here costs a serverless
-    // invocation. If it fails, the word "star" stays where the number would be.
+    // The count comes from shields.io, which already asks GitHub for it with its
+    // own tokens and caches the answer, so this page never touches api.github.com
+    // and never spends a visitor's rate limit. Nothing of ours runs: no serverless
+    // function, no scheduled job. shields answers 200 even when it cannot read
+    // GitHub (the value is then an error phrase), which matters because a failed
+    // request is exactly what put a red 403 in the console before.
     const label = gh.querySelector(".gh-label");
     if (label) {
-      fetch("stars.json", { cache: "no-store" })
-        .then((r) => (r.ok ? r.json() : null))
-        .then((d) => {
-          if (d && typeof d.count === "number" && d.count > 0) label.textContent = String(d.count);
-        })
-        .catch(() => { void 0; });
+      const KEY = "kny:stars:3";
+      const read = () => {
+        try { return JSON.parse(localStorage.getItem(KEY) || "null"); } catch (e) { return null; }
+      };
+      const paint = (n) => {
+        if (typeof n === "number" && n > 0) label.textContent = String(n);
+      };
+      const toCount = (v) => {
+        const m = String(v || "").trim().match(/^([0-9]+(?:\.[0-9]+)?)\s*([kKmM])?$/);
+        if (!m) return null;
+        const mult = m[2] ? (/[kK]/.test(m[2]) ? 1000 : 1000000) : 1;
+        return Math.round(parseFloat(m[1]) * mult);
+      };
+      const cached = read();
+      if (cached && Date.now() - cached.at < 6 * 60 * 60 * 1000) paint(cached.n);
+      if (!cached || Date.now() - cached.at >= 6 * 60 * 60 * 1000) {
+        fetch("https://img.shields.io/github/stars/sloemo01/koi-no-yume.json")
+          .then((r) => (r.ok ? r.json() : null))
+          .then((d) => {
+            const n = d ? toCount(d.value) : null;
+            if (n === null) return;
+            paint(n);
+            try { localStorage.setItem(KEY, JSON.stringify({ n: n, at: Date.now() })); } catch (e) { void e; }
+          })
+          .catch(() => { void 0; });
+      }
     }
   }
 
