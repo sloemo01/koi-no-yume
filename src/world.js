@@ -314,26 +314,41 @@ function buildScenery(rand, res, pond) {
     // is about 130 px wide, and a 120 px boat was almost the full width of the
     // pond and had nowhere legal to sit. It keeps its desktop length and shrinks
     // with the frame on small screens.
-    const size = Math.round(clamp(res.x * 0.42, 56, 120));
+    const size = Math.round(clamp(res.x * 0.58, 76, 120));
     const halfW = size * 0.62;
     const halfH = size * 0.40;
     // a clear stretch of open water, away from the pads and stones
     let spot = null;
     for (let tries = 0; tries < 40 && !spot; tries++) {
       const p = pond.randomPoint(rand, 0.55, 0.1);
-      if (p.x < halfW || p.x > res.x - halfW || p.y < halfH || p.y > res.y - halfH) continue;
+      // on a phone the top bar covers about a quarter of the frame, so a hull
+      // that spawns up there is hidden behind the controls until you hide them
+      const topInset = Pond.state && Pond.state.touch ? res.y * 0.30 : halfH;
+      if (p.x < halfW || p.x > res.x - halfW || p.y < topInset || p.y > res.y - halfH) continue;
+      // Clearance has to shrink with the pond. On a phone the world is about 130
+      // px wide and the pads sit everywhere, so a desktop sized gap rejected
+      // every candidate and the hull fell back to an unchecked point, half of it
+      // outside the frame.
+      const padGap = Math.min(size * 0.7, size * 0.45 + 6);
       let clear = true;
       for (const pad of pads) {
-        if (Math.hypot(pad.x - p.x, pad.y - p.y) < size * 0.7) { clear = false; break; }
+        if (Math.hypot(pad.x - p.x, pad.y - p.y) < padGap) { clear = false; break; }
       }
       if (clear) {
         for (const st of steppingStones) {
-          if (Math.hypot(st.x - p.x, st.y - p.y) < size * 0.62) { clear = false; break; }
+          if (Math.hypot(st.x - p.x, st.y - p.y) < size * 0.5) { clear = false; break; }
         }
       }
       if (clear) spot = p;
     }
-    if (!spot) spot = pond.randomPoint(rand, 0.6, 0.1);
+    if (!spot) {
+      const p = pond.randomPoint(rand, 0.6, 0.1);
+      const topInset = Pond.state && Pond.state.touch ? res.y * 0.30 : halfH;
+      spot = {
+        x: clamp(p.x, halfW, res.x - halfW),
+        y: clamp(p.y, topInset, res.y - halfH),
+      };
+    }
     return {
       tex: tex.canvas,
       x: spot.x, y: spot.y,
