@@ -471,11 +471,13 @@ const TEXTURES = (() => {
 
   // ------------------------------------------------------------- minnow
 
+  // Deep backs against pale bellies. At twelve pixels long the contrast is
+  // what makes the fish read; a pale back just dissolves into the water.
   const MINNOW_VARIANTS = {
-    silver: { back: "#b9c2c8", belly: "#e8eef0", tail: "#a7b2ba" },
-    slate: { back: "#6f8496", belly: "#c2cfd8", tail: "#5d7284" },
-    gold: { back: "#d8a648", belly: "#f0d792", tail: "#c2903a" },
-    ember: { back: "#cf6a3d", belly: "#f0b98a", tail: "#b4552f" },
+    silver: { back: "#8d9aa4", belly: "#e6edf0", tail: "#7d8b95" },
+    slate: { back: "#4e6376", belly: "#c2cfd8", tail: "#3f5466" },
+    gold: { back: "#b07f2c", belly: "#f0d792", tail: "#96702a" },
+    ember: { back: "#b04e28", belly: "#f0b98a", tail: "#8e3f20" },
   };
 
   // A small fish at 12x8. Tapered body, a fan tail with a fork, a dorsal
